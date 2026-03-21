@@ -6,9 +6,12 @@
 |------|------|------|----------|
 | 1.0 | 2026-03-21 | AI Assistant | 初稿完成 |
 | 1.2 | 2026-03-21 | AI Assistant | 对齐 [PRD v1.1](../products/ai_bot_v1_1.md) 与后端 [tech_design_ai_bot_v1_2.md](./tech_design_ai_bot_v1_2.md)（§5.x）：SSE `tool_result_meta`/`citation`、`preferences`、任务 `detail`、文件 `folder_path`/`tags`/`processed`、完整 files API、小文件/分片双路径、64MB 校验、浏览器通知、搜索/研究态与配额提示、登录与 AI 引导关系说明 |
+| 1.3 | 2026-03-21 | AI Assistant | §6.1、§13：由「增量片段」改为**完整目录约定**（`src/components/` 全树 + 全量 `src/` 与根配置），与 §3 模块表及 [tasks_frontend_v1_2.md](../tasks/tasks_frontend_v1_2.md) 中的路径、组件名对齐 |
+| 1.4 | 2026-03-21 | AI Assistant | 与仓库布局对齐：**前端工程根为 `frontend/`**（与根目录 **`backend/`** 并列）；§3 关键路径、§6.1 / §13 树状结构均以 `frontend/` 为前缀；代码片段中 `// src/...` 注释仍表示 `frontend/src/...` |
 
 ### 与 PRD / 后端的范围说明
 
+- **仓库与路径约定**：本仓库在根目录下以 **`frontend/`** 存放前端工程（与 **`backend/`** 并列）。**§3 模块表「关键文件」、§6.1、§13** 中的路径均相对于 **`frontend/`**（即从仓库根看为 `frontend/src/...`）。文中 TypeScript 示例顶部的 `// src/...` 注释沿用 Vite 习惯，含义同上。
 - **以后端契约为准**：接口路径、请求体字段、SSE 事件名以 `tech_design_ai_bot_v1_2.md` 为准；若后端变更，前端类型与 Hook 应同步更新。
 - **PRD 2.5.1 文件夹**：v1.1 可采用 **逻辑路径 `folder_path` + `GET ?folder=`**（与后端一致），完整「创建文件夹」树形 UI 可作为后续迭代。
 - **流式对话**：除正文 token 外，须消费 **`tool_result_meta`、`citation`（及可选 `intention`）** 以满足 PRD 2.1-4、5.6（悬停展示搜索/RAG 元数据）。
@@ -80,15 +83,15 @@
 
 | 模块 | 职责 | 关键文件 |
 |------|------|----------|
-| **路由模块** | 页面路由定义、守卫、懒加载 | `src/router/index.tsx`, `src/router/guards.ts` |
-| **全局状态管理** | 用户信息、**preferences**、AI 昵称、对话辅助态（搜索中/研究中） | `src/store/userStore.ts`, `src/store/uiStore.ts` |
-| **HTTP 客户端** | API 请求封装、拦截器、错误处理、**413 文件过大** | `src/api/client.ts` |
-| **SSE / 对话流** | 解析 `token` + **`tool_result_meta`** + **`citation`** + `intention` | `src/lib/chat-stream.ts`, `src/hooks/useChatStream.ts` |
-| **对话模块** | 对话界面、消息流、富文本与引用悬停 | `src/pages/Chat/`, `src/components/chat/` |
-| **任务模块** | 任务列表、**detail/子任务**展示（与对话互补） | `src/components/tasks/`, `src/hooks/useTasks.ts` |
-| **文件管理模块** | 列表筛选、上传（小/大）、标签、路径、**processed** 展示 | `src/pages/Files/`, `src/hooks/useFiles.ts`, `useFileUpload.ts` |
-| **用户设置模块** | 用户信息、**preferences**、AI 昵称 | `src/pages/Settings/` |
-| **公共组件** | 消息气泡、文件卡片、进度条、模态框等 | `src/components/ui/` |
+| **路由模块** | 页面路由定义、守卫、懒加载 | `frontend/src/router/index.tsx`, `frontend/src/router/guards.ts` |
+| **全局状态管理** | 用户信息、**preferences**、AI 昵称、对话辅助态（搜索中/研究中） | `frontend/src/store/userStore.ts`, `frontend/src/store/uiStore.ts` |
+| **HTTP 客户端** | API 请求封装、拦截器、错误处理、**413 文件过大** | `frontend/src/api/client.ts` |
+| **SSE / 对话流** | 解析 `token` + **`tool_result_meta`** + **`citation`** + `intention` | `frontend/src/lib/chat-stream.ts`, `frontend/src/hooks/useChatStream.ts` |
+| **对话模块** | 对话界面、消息流、富文本与引用悬停 | `frontend/src/pages/Chat/`, `frontend/src/components/chat/` |
+| **任务模块** | 任务列表、**detail/子任务**展示（与对话互补） | `frontend/src/components/tasks/`, `frontend/src/hooks/useTasks.ts` |
+| **文件管理模块** | 列表筛选、上传（小/大）、标签、路径、**processed** 展示 | `frontend/src/pages/Files/`, `frontend/src/hooks/useFiles.ts`, `frontend/src/hooks/useFileUpload.ts` |
+| **用户设置模块** | 用户信息、**preferences**、AI 昵称 | `frontend/src/pages/Settings/` |
+| **公共组件** | 消息气泡、文件卡片、进度条、模态框等 | `frontend/src/components/ui/` |
 
 ---
 
@@ -243,20 +246,42 @@ export const filesAPI = {
 
 ## 6. UI 组件设计
 
-### 6.1 组件目录结构（增量）
+### 6.1 组件目录结构（约定）
+
+以下为 v1.2 **推荐的完整** `components/` 布局；树状路径以 **`frontend/` 为前端工程根**（与仓库根目录下 `backend/` 并列），与 §3 模块划分及开发任务中的组件命名一致。实现时可将复杂组件拆分为同目录下的 `*.types.ts` / `useXxx.ts` 等，但**职责边界**（对话 / 任务 / 文件 / 布局 / 通用 UI）建议保持与本树一致。更外层 `pages/`、`hooks/`、`api/` 等见 **§13**。
 
 ```
-src/components/
-├── chat/
-│   ├── Message.tsx
-│   ├── MessageList.tsx
-│   ├── ChatInput.tsx
-│   ├── ToolCallMark.tsx      # 搜索等：绑定 tool_result_meta
-│   └── RagCitation.tsx       # RAG：绑定 citation + 正文 <rag>
-├── files/
-│   ├── FileCard.tsx          # 展示 tags、folder_path、processed 状态
-│   ├── FolderBreadcrumb.tsx # 可选：与 ?folder= 前缀一致
-│   ...
+frontend/src/components/
+├── layout/                    # 全局壳层：与架构图中 Header / 侧边栏对应
+│   ├── AppShell.tsx           # Outlet + 公共布局槽位
+│   ├── Header.tsx
+│   └── Sidebar.tsx            # 导航：Chat / Files / Settings 等
+├── auth/
+│   └── RequireAuth.tsx        # 与 §8.3 路由守卫配合（未登录跳转 /login）
+├── chat/                      # 对话页专用（对应 frontend/src/pages/Chat/）
+│   ├── Message.tsx            # Markdown、<rag>/<tool> 与 SSE 元数据关联
+│   ├── MessageList.tsx        # 可选：配合 react-window / react-virtual
+│   ├── ChatInput.tsx          # 多行输入、发送/中止流式请求
+│   ├── ToolCallMark.tsx       # 搜索等：绑定 tool_result_meta
+│   ├── RagCitation.tsx        # RAG：绑定 citation + 正文 <rag>
+│   └── ChatStatusIndicator.tsx # 「正在搜索…」「深度研究中…」等（intention / 工具起止）
+├── tasks/                     # 任务侧栏与详情（与 useTasks、tasksAPI 配合）
+│   ├── TaskSidebar.tsx        # 列表、筛选、快捷插入
+│   ├── TaskItem.tsx
+│   └── TaskDetailPanel.tsx    # 展开任务 detail / 子任务信息
+├── files/                     # 工作空间（对应 frontend/src/pages/Files/）
+│   ├── FileList.tsx           # 列表/网格、排序与筛选入口
+│   ├── FileCard.tsx           # tags、folder_path、processed（0/1/-1）
+│   ├── FolderBreadcrumb.tsx   # 与 GET ?folder= 前缀一致（可选）
+│   ├── FileToolbar.tsx        # 搜索框、类型筛选、视图切换（可与 FileList 合并）
+│   ├── UploadDropzone.tsx     # react-dropzone 封装
+│   ├── UploadProgress.tsx     # 虚线/实线/红框、分片总进度
+│   └── SemanticTypeModal.tsx  # react-hook-form：语义类型、folder_path、tags
+└── ui/                        # 与设计系统无关的通用块（非业务）
+    ├── Button.tsx
+    ├── Modal.tsx
+    ├── Spinner.tsx
+    └── …                      # Input、Select、Toast 容器等按需补充
 ```
 
 ### 6.2 核心组件设计
@@ -388,24 +413,71 @@ interface UiState {
 
 ## 12. 部署与构建
 
+- **工程目录**：在 monorepo 中进入 **`frontend/`** 再执行安装与构建（与 **`backend/`** 互不混淆）。
 - **环境变量**：`VITE_API_BASE`（生产为 Worker/Pages 暴露的 **HTTPS 根 URL**，无尾部斜杠）。
 - **CORS**：由后端配置；前端仅请求该基地址。
-- 部署：**Cloudflare Pages** / **Vercel**；构建 `npm run build`。
+- 部署：**Cloudflare Pages** / **Vercel**；在 `frontend/` 下执行 `npm run build`（或将构建根目录指向 `frontend/`）。
 
 ---
 
-## 13. 目录结构（增量）
+## 13. 完整源码目录结构（约定）
 
-在初版目录基础上增加例如：
+下列为与本文 **§1～§12**、**§3 模块表** 及 [tasks_frontend_v1_2.md](../tasks/tasks_frontend_v1_2.md) 对齐的 **完整前端工程骨架**（Vite + React + TS）。**`frontend/`** 与仓库根目录下的 **`backend/`** 并列；`frontend/src/components/` 的细目见 **§6.1**。`frontend/` 包根上的配置文件（`package.json`、`vite.config.ts`、`tailwind.config.js`、`postcss.config.js`、`tsconfig.json`、`index.html`、`.env.example` 等）按脚手架惯例放置，此处不逐一枚举。
 
 ```
-src/
-├── lib/
-│   └── chat-stream.ts       # SSE 解析、事件类型定义
-├── types/
-│   ├── sse.ts               # SseEvent / ToolResultMeta / CitationPayload
-│   └── ...
+<repository-root>/
+├── backend/                   # 后端工程（Worker 等），参见 backend 目录内文档
+└── frontend/                  # 前端工程根：npm 安装、dev、build 均在此目录执行
+    ├── package.json
+    ├── index.html
+    ├── public/                # 静态资源（favicon 等）
+    ├── src/
+    │   ├── main.tsx
+    │   ├── App.tsx            # 路由出口、全局 Provider（如 Toaster）
+    │   ├── vite-env.d.ts
+    │   ├── styles/
+    │   │   └── index.css      # Tailwind 入口
+    │   ├── router/
+    │   │   ├── index.tsx      # 路由表：/、/files、/settings、/login
+    │   │   └── guards.ts      # RequireAuth 等逻辑（可与 components/auth 复用）
+    │   ├── pages/
+    │   │   ├── Chat/
+    │   │   │   └── index.tsx  # 对话首页（懒加载入口）
+    │   │   ├── Files/
+    │   │   │   └── FileWorkspace.tsx
+    │   │   ├── Settings/
+    │   │   │   └── index.tsx
+    │   │   └── Login/
+    │   │       └── index.tsx
+    │   ├── components/        # 见 §6.1 完整树
+    │   ├── hooks/
+    │   │   ├── useChatStream.ts
+    │   │   ├── useTasks.ts
+    │   │   ├── useFiles.ts
+    │   │   └── useFileUpload.ts
+    │   ├── api/
+    │   │   ├── client.ts      # request、apiUrl、413/401 处理
+    │   │   ├── user.ts
+    │   │   ├── tasks.ts
+    │   │   └── files.ts
+    │   ├── store/
+    │   │   ├── userStore.ts
+    │   │   └── uiStore.ts
+    │   ├── lib/
+    │   │   ├── chat-stream.ts # SSE 解析、事件归并到消息或 Store
+    │   │   ├── idb.ts         # 可选：IndexedDB 封装（文件列表缓存）
+    │   │   └── utils.ts       # 格式化、防抖节流等
+    │   └── types/
+    │       ├── user.ts
+    │       ├── task.ts
+    │       ├── file.ts
+    │       ├── chat.ts
+    │       └── sse.ts         # SseEvent、ToolResultMeta、CitationPayload 等
+    ├── e2e/                   # 可选：Playwright 规格（与 §14 E2E 一致）
+    └── …                      # vitest.config、eslint 等
 ```
+
+**测试文件放置**：与 §14 一致，可采用**与源文件同目录**的 `*.test.ts(x)`，或集中 `frontend/src/__tests__/`；Vitest `setup` 可放在 `frontend/src/test/setup.ts`（任选其一，团队内统一即可）。
 
 ---
 
