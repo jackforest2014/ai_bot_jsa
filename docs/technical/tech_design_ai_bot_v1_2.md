@@ -1,4 +1,4 @@
-# 后端技术设计方案（1.0版本）——最终版
+# 后端技术设计方案（v1.2，对齐 PRD v1.1）
 
 ## 文档版本
 | 版本 | 日期 | 作者 | 变更说明 |
@@ -6,6 +6,13 @@
 | 1.0 | 2026-03-21 | AI Assistant | 初稿完成（包含完整技术选型、架构、实现细节、LLM调用设计） |
 | 1.1 | 2026-03-21 | AI Assistant | 新增个人工作空间与文件管理模块（上传、RAG、前端交互） |
 | 1.2 | 2026-03-21 | AI Assistant | 完善文件上传进度反馈；增加场景化 Prompt 模板与意图识别；扩展 conversations 表结构 |
+| 1.3 | 2026-03-21 | AI Assistant | 对照 PRD v1.1 修订：去重章节、补齐 FileTool/SSE 引用块、文件夹与标签字段、任务 detail、用户偏好、Serper 配额、搜索类型与文件处理策略说明；标明 TOT/GOT 与 projects 为 PRD 外可选扩展 |
+
+### 与 PRD v1.1 的范围说明
+
+- **必选对齐**：对话式任务与文件管理、Serper 搜索与降级、RAG、工作空间上传与进度、64MB 限制、数据隔离等均按 PRD 设计。
+- **PRD 未要求但本方案保留的扩展**：`projects` 任务分组、**TOT/GOT** 高级推理工具——实现阶段可作为**可选模块**开关，不纳入 PRD v1.1 验收范围。
+- **向量维度**：下文示例维度与所用 **Gemini Embedding 模型官方文档**一致为准，集成前须在代码与环境变量中核对实际维度。
 
 ---
 
@@ -22,6 +29,7 @@
   - [4.2 向量数据库（Qdrant）](#42-向量数据库qdrant)
   - [4.3 时间字段设计说明](#43-时间字段设计说明)
   - [4.4 数据库迁移脚本（D1）](#44-数据库迁移脚本d1)
+  - [4.5 上传文件类型与 RAG 处理策略](#45-上传文件类型与-rag-处理策略)
 - [5. API 接口设计](#5-api-接口设计)
   - [5.1 对话接口（SSE 流式）](#51-对话接口sse-流式)
   - [5.2 用户信息接口](#52-用户信息接口)
@@ -174,7 +182,7 @@
 │  │  │ 记忆召回模块 │ │ 工具调用模块 │ │ 子代理规划模块   │   │  │
 │  │  └─────────────┘ └─────────────┘ └──────────────────┘   │  │
 │  │  ┌─────────────┐ ┌─────────────────────────────────┐   │  │
-│  │  │ TOT/GOT模块 │ │        文件管理模块              │   │  │
+│  │  │ TOT/GOT(可选)│ │        文件管理模块              │   │  │
 │  │  └─────────────┘ └─────────────────────────────────┘   │  │
 │  └───────────────────────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────────────────────┐  │
@@ -189,7 +197,7 @@
 - **分层清晰**：网关、服务层、数据层分离，便于维护和扩展。
 - **工具注入与子代理规划**：通过 Gemini 的函数调用能力实现，核心逻辑封装在工具调用模块。
 - **抽象解耦**：LLM、向量数据库、关系数据库均通过接口抽象，便于替换实现。
-- **高级推理支持**：内置 TOT/GOT 模块，用于复杂思考链。
+- **高级推理支持（可选）**：TOT/GOT 供复杂推理场景使用，**非 PRD v1.1 必验收项**，建议 feature flag 控制。
 - **文件管理**：集成 R2 存储、分片上传、进度反馈、RAG 处理。
 
 ---
@@ -200,11 +208,11 @@
 |------|------|-------------|
 | **用户管理模块** | 用户信息、AI昵称的存储与获取 | `UserRepository`, `api/user.ts` |
 | **对话管理模块** | 接收用户消息，调用 LLM，处理工具调用，返回回复；意图识别与 Prompt 选择 | `ChatService`, `api/chat.ts`, `IntentClassifier` |
-| **任务管理模块** | 任务 CRUD，项目关联 | `TaskRepository`, `ProjectRepository`, `api/tasks.ts` |
+| **任务管理模块** | 任务 CRUD；可选项目分组（**超出 PRD v1.1，可关闭**） | `TaskRepository`, `ProjectRepository`, `api/tasks.ts` |
 | **记忆召回模块** | 向量检索历史对话、上传文档，注入上下文 | `MemoryService`, `VectorStore` |
-| **工具调用模块** | 注册与执行所有可用工具 | `ToolRegistry`, `tools/*.ts` |
+| **工具调用模块** | 注册与执行所有可用工具（含 `manage_workspace_files`） | `ToolRegistry`, `tools/*.ts` |
 | **子代理规划模块** | 深度研究等复杂任务的分解与协调 | `PlannerService` |
-| **TOT/GOT 模块** | 树/图思考模式，用于高级推理 | `TotService`, `GotService` |
+| **TOT/GOT 模块** | 树/图思考模式（**PRD 外可选**，默认可关闭以降低延迟与成本） | `TotService`, `GotService` |
 | **文件管理模块** | 文件上传、存储、元数据管理、RAG 处理、进度反馈 | `FileService`, `api/files.ts`, `FileProcessor` |
 | **Prompt 管理模块** | 管理场景化 Prompt 模板，支持按意图选择 | `PromptRepository`, `api/prompts.ts` |
 | **LLM 抽象层** | 封装不同 AI 模型调用 | `LLMProvider`, `GeminiProvider` |
@@ -226,7 +234,8 @@
 │ name        │       │ project_id  │───────│ user_id (FK)│
 │ email       │       │ title       │       │ name        │
 │ ai_nickname │       │ description │       │ created_at  │
-│ created_at  │       │ status      │       └─────────────┘
+│ prefs_json  │       │ detail_json │       └─────────────┘
+│ created_at  │       │ status      │
 └─────────────┘       │ created_at  │
                       │ updated_at  │
                       └─────────────┘
@@ -242,9 +251,18 @@
 │ intention       │       │ size            │
 │ prompt_id (FK)  │       │ r2_key          │
 │ keywords        │       │ semantic_type   │
-│ conversation_id │       │ processed       │
-└─────────────────┘       │ created_at      │
+│ conversation_id │       │ folder_path     │
+└─────────────────┘       │ tags            │
+                          │ processed       │
+                          │ created_at      │
                           └─────────────────┘
+
+┌─────────────────┐
+│ serper_usage    │
+├─────────────────┤
+│ user_id + day   │
+│ call_count      │
+└─────────────────┘
 
 ┌─────────────────┐
 │   prompt_templates   │
@@ -266,6 +284,7 @@
 | name | TEXT | NOT NULL | 用户姓名 |
 | email | TEXT | UNIQUE NOT NULL | 邮箱 |
 | ai_nickname | TEXT | DEFAULT '助手' | AI 昵称 |
+| preferences_json | TEXT | NULL | 用户偏好（JSON），如回复风格、习惯等，供长期记忆与 Prompt 注入 |
 | created_at | INTEGER | NOT NULL | Unix 时间戳 |
 
 **projects**
@@ -283,7 +302,8 @@
 | user_id | TEXT | NOT NULL, FK | 所属用户 |
 | project_id | TEXT | NULL, FK | 所属项目 |
 | title | TEXT | NOT NULL | 任务标题 |
-| description | TEXT | NULL | 详细描述/备注 |
+| description | TEXT | NULL | 详细描述/备注（纯文本） |
+| detail_json | TEXT | NULL | 结构化详情（JSON）：子任务列表、分条备注等，对应 PRD「细化需求」 |
 | status | TEXT | NOT NULL DEFAULT 'pending' | pending, in_progress, completed |
 | created_at | INTEGER | NOT NULL | |
 | updated_at | INTEGER | NOT NULL | |
@@ -327,13 +347,25 @@
 | size | INTEGER | NOT NULL | 文件大小（字节） |
 | r2_key | TEXT | NOT NULL | 在 R2 中的存储路径 |
 | semantic_type | TEXT | NULL | 用户标记的语义类型（简历、学习资料、小抄等） |
-| processed | INTEGER | DEFAULT 0 | 是否已向量化处理（0/1） |
+| folder_path | TEXT | NOT NULL DEFAULT '' | 工作空间内逻辑路径（如 `学习资料/2024`），根目录为空字符串；与 `GET /api/files?folder=` 前缀匹配 |
+| tags | TEXT | NULL | 标签 JSON 数组字符串，如 `["important"]`，支持对话中「标记为重要」等指令 |
+| processed | INTEGER | NOT NULL DEFAULT 0 | 异步处理状态：`0` 未处理或处理中，`1` 已向量化写入 Qdrant，`-1` 文本提取或向量化失败（仍可下载，可重试） |
 | created_at | INTEGER | NOT NULL | 上传时间 |
+
+**serper_usage**（Serper 调用计数，满足 PRD 成本与频率控制）
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| user_id | TEXT | NOT NULL, PK(复合) | 用户 |
+| day | TEXT | NOT NULL, PK(复合) | UTC 日期 `YYYY-MM-DD` |
+| call_count | INTEGER | NOT NULL DEFAULT 0 | 当日已成功调用 Serper 的次数 |
+
+主键：`(user_id, day)`。每次 `search` / 深度研究内实际命中 Serper 成功返回时递增；超过软阈值时由 `SearchTool` 或 `PlannerService` 返回友好提示，必要时在回复中询问用户是否继续（与 PRD 2.6.2-6 一致）。
 
 ### 4.2 向量数据库（Qdrant）
 
 **Collection**: `memory`  
-**向量维度**: 768（Gemini embedding）  
+**向量维度**: 与所选 **Gemini（或替代）Embedding 模型**输出维度一致（文档示例沿用 768，**集成前务必按官方文档核对并配置**）  
 **距离度量**: Cosine  
 
 **Payload 结构**:
@@ -345,6 +377,8 @@
 | timestamp | integer | 时间戳 |
 | file_id | string | 关联 file_uploads.id（若为文档） |
 | semantic_type | string | 用户标记的语义类型（便于过滤） |
+| folder_path | string | 可选，与 D1 中文件记录一致，便于按目录过滤 |
+| tags | string[] | 可选，从 `file_uploads.tags` 解析 |
 
 ### 4.3 时间字段设计说明
 
@@ -361,10 +395,6 @@
 当前版本按秒级设计，后续可根据实际需求灵活升级。
 
 ### 4.4 数据库迁移脚本（D1）
-
-使用 `wrangler d1 migrations` 管理。示例迁移文件：
-
-## 4.4 数据库迁移脚本（D1）
 
 数据库迁移使用 `wrangler d1 migrations` 管理。所有迁移文件存放在 `src/db/migrations/` 目录下，按时间顺序编号。以下是每个迁移文件的内容。
 
@@ -457,7 +487,7 @@ INSERT INTO prompt_templates (id, name, template_text, scenario, created_at)
 VALUES (
   'default_prompt',
   'default',
-  '你是一个智能任务管理助手，昵称为“{{AI_NICKNAME}}”。你的职责是：\n1. 记住用户信息（姓名、邮箱），并在对话中自然称呼用户。\n2. 帮助用户管理任务列表（增删改查），支持通过自然语言对话完成操作。\n3. 当用户询问实时信息或需要外部知识时，调用 search 工具获取结果。\n4. 对于复杂研究任务，使用 plan_research 工具进行深度研究。\n5. 始终以友好、专业的语气回复。\n\n当前用户信息：\n- 姓名：{{USER_NAME}}\n- 邮箱：{{USER_EMAIL}}\n\n可用工具列表（以 JSON Schema 形式提供）：\n{{TOOLS_DEFINITIONS}}',
+  '你是一个智能任务管理助手，昵称为“{{AI_NICKNAME}}”。你的职责是：\n1. 记住用户信息（姓名、邮箱），并在对话中自然称呼用户。\n2. 帮助用户管理任务列表（增删改查），支持通过自然语言对话完成操作。\n3. 当用户询问实时信息或需要外部知识时，调用 search 工具获取结果。\n4. 对于复杂研究任务，使用 plan_research 工具进行深度研究。\n5. 当用户要求通过对话管理工作空间文件（删除、重命名、改语义类型、打标签等）时，调用 manage_workspace_files 工具。\n6. 始终以友好、专业的语气回复。\n\n当前用户信息：\n- 姓名：{{USER_NAME}}\n- 邮箱：{{USER_EMAIL}}\n\n可用工具列表（以 JSON Schema 形式提供）：\n{{TOOLS_DEFINITIONS}}',
   'default',
   strftime('%s', 'now')
 );
@@ -519,6 +549,36 @@ CREATE INDEX IF NOT EXISTS idx_files_semantic_type ON file_uploads(semantic_type
 
 ---
 
+### 迁移 0007：PRD 对齐字段与 Serper 用量表
+
+**文件**：`0007_prd_alignment.sql`
+
+```sql
+-- 用户偏好（长期记忆结构化落库，与 PRD 2.7 一致）
+ALTER TABLE users ADD COLUMN preferences_json TEXT;
+
+-- 任务子任务/结构化详情（与 PRD 2.3-5 一致）
+ALTER TABLE tasks ADD COLUMN detail_json TEXT;
+
+-- 工作空间路径与标签（与 PRD 2.5.1、对话「标记重要」等一致）
+ALTER TABLE file_uploads ADD COLUMN folder_path TEXT NOT NULL DEFAULT '';
+ALTER TABLE file_uploads ADD COLUMN tags TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_files_user_folder ON file_uploads(user_id, folder_path);
+
+-- Serper 按用户按日计数（与 PRD 2.6.2-6 一致）
+CREATE TABLE IF NOT EXISTS serper_usage (
+  user_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  call_count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day)
+);
+```
+
+> 若生产环境已在 0001–0006 上跑过数据，**仅追加** `0007` 即可；新建库可后续将 0001–0007 合并为单次初始化脚本（按团队规范选择）。
+
+---
+
 ### 执行迁移
 
 在本地或 CI 中，使用以下命令应用迁移：
@@ -536,6 +596,20 @@ wrangler d1 migrations apply task-assistant-db
 ---
 
 以上迁移脚本完整定义了 D1 数据库的所有表结构，包括索引、外键约束和默认数据（如默认 Prompt 模板）。
+
+### 4.5 上传文件类型与 RAG 处理策略
+
+与 PRD 2.5.2、2.5.4 对齐，避免「凡上传必可向量化」的误解：
+
+| 类型 | 处理策略 |
+|------|----------|
+| PDF、Word（doc/docx）、纯文本 / Markdown | 提取文本 → 分块 → Embedding → 写入 Qdrant；`processed` 最终为 `1` 或失败 `-1` |
+| Excel（xlsx 等） | **v1.1**：优先提取单元格文本（只读、行数上限可配置）；若解析失败则仅存储文件供下载，`processed = -1` 并提示 |
+| 图片 | **v1.1 可选**：OCR（如云端 API）后再向量化；未启用 OCR 时仅存储 + 元数据检索，不向量化 |
+| 音频 / 视频 | **不向量化全文**：仅存 R2 + `file_uploads` 元数据；对话中可通过文件名、`semantic_type`、`folder_path` 被模型引用；若后续接入转写服务，再在异步流水线中追加向量 |
+| 其他 MIME | 安全校验后存储；不向量化 unless 明确支持 |
+
+系统在 `FileService` / `FileProcessor` 中按 `mime_type` 分支；**异步队列**完成提取与 `processed` 状态更新，与第 11.3 节流程一致。
 
 ---
 
@@ -557,13 +631,19 @@ wrangler d1 migrations apply task-assistant-db
 
 响应：`Content-Type: text/event-stream`
 
-事件格式：
+事件格式（**与 PRD 2.1-4「悬停查看原始数据」对齐**：除正文 token 外，下发结构化引用块供前端渲染 `<search>` / `<rag>` 及 Tooltip）：
 ```
 event: token
 data: {"content":"正在思考"}
 
 event: tool_call
 data: {"name":"search","args":{...}}
+
+event: tool_result_meta
+data: {"tool":"search","items":[{"title":"...","url":"...","snippet":"...","date":null}],"raw_ref":"可选，指向服务端缓存键或截断 JSON"}
+
+event: citation
+data: {"kind":"rag","file_id":"...","filename":"...","semantic_type":"简历","excerpt":"检索片段预览","score":0.82}
 
 event: intention
 data: {"intention":"greeting"}
@@ -572,18 +652,25 @@ event: done
 data: {}
 ```
 
+约定说明：
+
+- **`tool_result_meta`**：在对应 `tool_call` 执行完成、且工具为 `search`（或同类）后发送，便于 UI 悬停展示来源与摘要，**不依赖用户从纯文本里猜 JSON**。
+- **`citation`**：在 RAG 检索命中后发送（可一条或多条），与最终 assistant 正文中的 `<rag source="file" data='...'>` 对应；前端可用 `file_id` 拉取更多元数据或预览。
+- 若需减少 SSE 条数，可将 `citation` 合并为单次 `event: citations` + JSON 数组，但需在前后端统一类型定义。
+
 在流式响应中，可额外发送 `intention` 事件，告知前端 AI 判断的用户意图。
 
 ### 5.2 用户信息接口
 
 **GET /api/user** → 返回当前用户
 ```json
-{ "id": "xxx", "name": "李明", "email": "li@example.com", "ai_nickname": "小研" }
+{ "id": "xxx", "name": "李明", "email": "li@example.com", "ai_nickname": "小研", "preferences": { "reply_style": "简洁" } }
 ```
+（`preferences` 来自 `users.preferences_json` 解析，无则省略或 `{}`。）
 
 **PUT /api/user** → 更新
 ```json
-{ "name": "李小明", "email": "new@example.com" }
+{ "name": "李小明", "email": "new@example.com", "preferences": { "reply_style": "简洁" } }
 ```
 
 **PUT /api/user/ai-name** → 设置 AI 昵称
@@ -596,8 +683,9 @@ data: {}
 **GET /api/tasks?status=pending** → 任务列表
 **POST /api/tasks** → 创建
 ```json
-{ "title": "完成报告", "description": "详细内容", "status": "pending" }
+{ "title": "完成报告", "description": "详细内容", "detail": { "subtasks": [{ "title": "提纲", "done": false }] }, "status": "pending" }
 ```
+（`detail` 可选，对应表字段 `detail_json`。）
 **PUT /api/tasks/:id** → 更新
 **DELETE /api/tasks/:id** → 删除
 
@@ -608,7 +696,7 @@ data: {}
 **GET /api/files**
 
 查询参数：
-- `folder`（可选）：文件夹路径，默认根目录
+- `folder`（可选）：逻辑路径前缀，与 `file_uploads.folder_path` 匹配（根目录传空或不传）；**v1.1 为扁平路径字符串**，非树形 inode，后续可演进为独立文件夹表。
 - `type`（可选）：按语义类型过滤
 
 响应：
@@ -621,11 +709,14 @@ data: {}
     "mime_type": "application/pdf",
     "size": 245760,
     "semantic_type": "简历",
+    "folder_path": "简历",
+    "tags": ["important"],
     "created_at": 1678896000,
-    "processed": true
+    "processed": 1
   }
 ]
 ```
+`processed` 数值语义同表定义：`0` / `1` / `-1`。
 
 #### 5.4.2 上传文件（支持分片）
 
@@ -633,7 +724,7 @@ data: {}
 
 请求类型：`multipart/form-data`（小文件）或 `application/json`（大文件初始化）
 
-- 小文件（≤5MB）：直接上传，包含 `file` 和 `semantic_type`。
+- 小文件（≤5MB）：`multipart` 字段包含 `file`、`semantic_type`，可选 `folder_path`、`tags`（JSON 字符串）。
 - 大文件：先调用初始化接口，获得 uploadId 和预签名分片 URL，再按分片上传。
 
 初始化接口（大文件）：
@@ -644,7 +735,9 @@ data: {}
   "original_name": "我的简历.pdf",
   "mime_type": "application/pdf",
   "size": 245760,
-  "semantic_type": "简历"
+  "semantic_type": "简历",
+  "folder_path": "简历",
+  "tags": ["important"]
 }
 ```
 返回：
@@ -699,7 +792,15 @@ data: {}
 
 返回：更新后的文件信息
 
-#### 5.4.7 获取下载链接
+#### 5.4.7 更新标签（重要标记等）
+
+**PUT /api/files/:id/tags**
+
+请求体：`{ "tags": ["important"] }`（覆盖式写入；对话侧由 `manage_workspace_files` 工具调用此逻辑。）
+
+返回：更新后的文件信息
+
+#### 5.4.8 获取下载链接
 
 **GET /api/files/:id/download**
 
@@ -871,7 +972,8 @@ R2 实现将利用 Cloudflare 的 `@cloudflare/workers-types` 和 `R2Bucket`。
 2. 帮助用户管理任务列表（增删改查），支持通过自然语言对话完成操作。
 3. 当用户询问实时信息或需要外部知识时，调用 search 工具获取结果。
 4. 对于复杂研究任务，使用 plan_research 工具进行深度研究。
-5. 始终以友好、专业的语气回复。
+5. 当用户要求通过对话管理工作空间文件（删除、重命名、改语义类型、打标签等）时，调用 manage_workspace_files 工具。
+6. 始终以友好、专业的语气回复。
 
 当前用户信息：
 - 姓名：{{USER_NAME}}
@@ -933,7 +1035,8 @@ private async selectPrompt(intention: string): Promise<PromptTemplate> {
 2. 帮助用户管理任务列表（增删改查），支持通过自然语言对话完成操作。
 3. 当用户询问实时信息或需要外部知识时，调用 search 工具获取结果。
 4. 对于复杂研究任务，使用 plan_research 工具进行深度研究。
-5. 始终以友好、专业的语气回复。
+5. 当用户要求通过对话管理工作空间文件（删除、重命名、改语义类型、打标签等）时，调用 manage_workspace_files 工具。
+6. 始终以友好、专业的语气回复。
 
 当前用户信息：
 - 姓名：{{USER_NAME}}
@@ -1265,22 +1368,75 @@ export class ToolRegistry {
 ```typescript
 export class SearchTool implements Tool {
   name = 'search';
-  description = '搜索实时信息';
+  description = '搜索实时信息（Serper）；类型与 PRD 2.6 对齐，按需传 type';
   parametersSchema = {
     type: 'object',
     properties: {
       query: { type: 'string', description: '搜索关键词' },
-      type: { type: 'string', enum: ['organic', 'news', 'images'], default: 'organic' },
+      type: {
+        type: 'string',
+        enum: [
+          'organic',
+          'news',
+          'images',
+          'videos',
+          'places',
+          'shopping',
+          'scholar',
+          'patents',
+        ],
+        default: 'organic',
+        description: 'Serper 返回类型，与官方 API 一致',
+      },
     },
     required: ['query'],
   };
 
-  async execute(args: { query: string; type?: string }): Promise<string> {
+  async execute(args: { query: string; type?: string }, ctx: ToolContext): Promise<string> {
+    // SerperQuotaService：查/写 serper_usage，超软上限时抛业务错误或返回可解析 JSON 提示
+    await serperQuota.assertUnderDailyLimit(ctx.userId);
     const results = await serperApi.search(args.query, args.type);
+    await serperQuota.incrementOnSuccess(ctx.userId);
     return JSON.stringify(results);
   }
 }
 ```
+
+（`ToolContext`、`SerperQuotaService` 为命名示意：实现时由 `ChatService` 注入当前 `userId` 与配额服务。）
+
+**`manage_workspace_files` 工具（PRD 2.5.4 对话管理文件）**
+
+将工作空间操作暴露给 LLM，内部仅调用 `FileService` 与 D1，**校验 `user_id`**，避免模型直接伪造 HTTP。建议工具名：`manage_workspace_files`。
+
+```typescript
+export class WorkspaceFilesTool implements Tool {
+  name = 'manage_workspace_files';
+  description =
+    '列出、删除、重命名工作空间文件，或更新语义类型/标签（如标记 important）。用于「删掉上次上传的简历」「把学习资料标成重要」等指令。';
+  parametersSchema = {
+    type: 'object',
+    properties: {
+      action: {
+        type: 'string',
+        enum: ['list', 'delete', 'rename', 'set_semantic_type', 'set_tags'],
+      },
+      file_id: { type: 'string', description: 'delete/rename/set_* 时必填' },
+      new_name: { type: 'string' },
+      semantic_type: { type: 'string' },
+      tags: { type: 'array', items: { type: 'string' } },
+      folder_path: { type: 'string', description: 'list 时可选过滤前缀' },
+      semantic_type_filter: { type: 'string', description: 'list 时按语义类型筛选' },
+    },
+    required: ['action'],
+  };
+
+  async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
+    return JSON.stringify(await fileService.handleToolAction(ctx.userId, args));
+  }
+}
+```
+
+实现要点：`list` 返回最近文件摘要（含 `id`、`original_name`、`semantic_type`、`folder_path`），便于模型解析「上次上传的简历」等指代；必要时可结合 `conversations` / 上传事件顺序。
 
 ---
 
@@ -1324,6 +1480,8 @@ export class PlannerService {
 ---
 
 ### 9.4 高级推理模式：TOT / GOT 实现
+
+> **与 PRD 关系**：本节为增强能力，**不属于 PRD v1.1 必验收项**；上线建议默认关闭或通过配置仅在内部/实验用户开启，避免 token 与延迟超预期。
 
 为了支持更复杂的思考链（如多路径探索、回溯），我们设计了独立的 TOT/GOT 模块，并封装为特殊工具，供主 Agent 调用。
 
@@ -1440,6 +1598,8 @@ export class MemoryService {
 
 短期记忆（当前会话）存储在 `ConversationService` 的数组中，随对话进行更新。每次对话开始时，会将最近 N 条消息（默认 10 轮）作为历史上下文传递给 LLM。
 
+**与 PRD 2.7 对齐**：除 Qdrant 中的对话/文档片段外，**可结构化加载的长期数据**优先来自 D1：`users.preferences_json`（如回复风格）在渲染 system prompt 时注入；`tasks.detail_json` 承载子任务等结构化需求，由 `TaskTool` 与列表查询接口读写，避免仅靠向量检索不稳定召回。
+
 ---
 
 ### 9.6 意图识别与 Prompt 模板选择
@@ -1462,6 +1622,7 @@ export class RuleBasedIntentClassifier implements IntentClassifier {
     ['interview', /面试|模拟面试|岗位/i],
     ['research', /研究|深度研究|报告/i],
     ['file_upload', /上传|简历|文件/i],
+    ['workspace_operation', /删除.*文件|重命名.*文件|标记.*重要|语义类型|工作空间/i],
     ['default', /.*/],
   ]);
 
@@ -1639,6 +1800,9 @@ classDiagram
     class TaskTool {
         +execute(args) Promise~string~
     }
+    class WorkspaceFilesTool {
+        +execute(args) Promise~string~
+    }
     class TotTool {
         +execute(args) Promise~string~
     }
@@ -1647,6 +1811,7 @@ classDiagram
     }
     ToolRegistry o-- SearchTool
     ToolRegistry o-- TaskTool
+    ToolRegistry o-- WorkspaceFilesTool
     ToolRegistry o-- TotTool
     ToolRegistry o-- GotTool
 
@@ -1700,8 +1865,10 @@ classDiagram
         +deleteFile(userId, fileId) Promise~void~
         +renameFile(userId, fileId, newName) Promise~FileInfo~
         +updateSemanticType(userId, fileId, type) Promise~void~
+        +updateTags(userId, fileId, tags) Promise~void~
         +getDownloadUrl(userId, fileId) Promise~string~
         +processFile(fileId, content) Promise~void~
+        +handleToolAction(userId, args) Promise~unknown~
     }
     ChatService --> LLMProvider
     ChatService --> ToolRegistry
@@ -1958,7 +2125,8 @@ backend/
 │   │   │   ├── 0003_create_tasks.sql
 │   │   │   ├── 0004_create_prompt_templates.sql
 │   │   │   ├── 0005_create_conversations.sql
-│   │   │   └── 0006_create_file_uploads.sql
+│   │   │   ├── 0006_create_file_uploads.sql
+│   │   │   └── 0007_prd_alignment.sql
 │   │   └── repositories/              # 数据访问层
 │   │       ├── UserRepository.ts
 │   │       ├── TaskRepository.ts
@@ -1970,7 +2138,8 @@ backend/
 │   │   └── R2Storage.ts               # Cloudflare R2 实现
 │   ├── tools/                         # 具体工具实现
 │   │   ├── index.ts                   # 统一导出
-│   │   ├── SearchTool.ts              # 搜索工具（调用 Serper）
+│   │   ├── SearchTool.ts              # 搜索工具（调用 Serper，含用量计数）
+│   │   ├── WorkspaceFilesTool.ts      # 工作空间文件（对话侧，PRD 2.5.4）
 │   │   ├── TaskTool.ts                # 任务管理工具
 │   │   ├── UserTool.ts                # 用户信息工具
 │   │   ├── ExportTool.ts              # 报告导出工具
@@ -2013,6 +2182,7 @@ backend/
 |----------|----------|
 | **Gemini API 限流/超时** | 重试最多 2 次，若仍失败，返回友好提示：“AI 服务繁忙，请稍后再试。” |
 | **Serper API 异常** | 捕获错误，告知用户“搜索服务暂时不可用”，降级为纯 AI 回答（基于知识库）。 |
+| **Serper 日配额/频率软上限** | 读取 `serper_usage`：未超限时正常调用；接近或超过配置阈值时返回结构化提示（可含「是否继续研究」），与 PRD 2.6.2-6 一致；**不泄露**其他用户数据。 |
 | **Qdrant 连接失败** | 记录错误，跳过 RAG 检索，仅使用短期记忆。 |
 | **D1 数据库错误** | 返回 500，记录日志，提示用户刷新重试。 |
 | **用户输入过长** | 返回提示“消息过长，请精简后重试”。 |
@@ -2176,10 +2346,10 @@ wrangler secret put SERPER_API_KEY
 
 本技术设计方案基于 Cloudflare Workers + TypeScript + Hono 构建，通过抽象层实现 LLM、向量数据库、关系数据库、文件存储的灵活替换。采用 SSE 实现流式对话，类结构和目录清晰，易于维护和扩展。
 
-在 Agent 实现上，我们选择了轻量自研方案，包含 ReAct 循环、工具调用、子代理规划和 TOT/GOT 高级推理，既保持了边缘环境的轻量高效，又提供了足够强大的智能能力。LLM 调用方面，设计了模板化 Prompt、多层次上下文管理、生成质量评估和完整的 token 成本跟踪框架，确保可观测性和成本可控。
+在 Agent 实现上，我们选择了轻量自研方案，包含 ReAct 循环、工具调用、子代理规划；**TOT/GOT 为可选增强**，与 PRD v1.1 验收解耦。LLM 调用方面，设计了模板化 Prompt、多层次上下文管理、生成质量评估和完整的 token 成本跟踪框架，确保可观测性和成本可控。
 
-新增的个人工作空间与文件管理模块，支持拖拽上传、进度反馈（基于前端 XMLHttpRequest 分片进度）、元数据标记、RAG 检索，使用户能够方便地管理个人资料并与 AI 深度交互。同时，引入了场景化 Prompt 模板和意图识别机制，使对话更贴合用户场景，并扩展了 conversations 表结构以记录意图、模板使用和实体信息，为后续分析优化奠定基础。
+个人工作空间与文件管理模块支持拖拽上传、进度反馈、语义类型与 **folder_path / tags**、**对话侧 `manage_workspace_files` 工具**，并与 SSE **`tool_result_meta` / `citation`** 事件配合实现 PRD 要求的来源悬停展示。Serper 侧通过 **`serper_usage`** 满足按用户按日的频率与成本提示。
 
-部署流程完整，可快速上线验证。所有设计均围绕 PRD 需求，确保功能完整、性能良好、安全可靠。
+数据层通过 **`preferences_json`、`detail_json`、`serper_usage`** 及文件处理策略表（第 4.5 节）与 PRD v1.1 对齐；`projects` 仍为可选扩展。部署流程完整，可快速上线验证。
 
 **文档结束**
