@@ -1,0 +1,14 @@
+# 复制为 .dev.vars 后填入本地密钥（勿提交 .dev.vars）
+# GEMINI_API_KEY=
+# SERPER_API_KEY=
+# Qdrant Cloud 集群 HTTPS 根 URL（通常含 :6333，以控制台为准）
+# QDRANT_URL=https://xxxx.aws.cloud.qdrant.io:6333
+# QDRANT_API_KEY=
+# 可选；与 wrangler.toml [vars] 默认一致时可省略
+# QDRANT_COLLECTION=memory
+# 必须与所用 Embedding 模型输出维度一致（如 Gemini 某模型为 768，请查官方文档后修改 wrangler.toml 或此处）
+# EMBEDDING_DIMENSIONS=768
+
+# R2 预签名 URL（可选，与 wrangler.toml [vars] 中 R2_ACCOUNT_ID / R2_BUCKET_NAME 配合）
+# R2_S3_ACCESS_KEY_ID=
+# R2_S3_SECRET_ACCESS_KEY=

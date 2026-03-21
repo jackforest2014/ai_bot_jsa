@@ -1,0 +1,32 @@
+{
+  "name": "ai-task-assistant-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:apply:local": "wrangler d1 migrations apply task-assistant-db --local",
+    "db:apply:remote": "wrangler d1 migrations apply task-assistant-db --remote",
+    "qdrant:ensure-collection": "node scripts/ensure-qdrant-collection.mjs"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.40.0",
+    "hono": "^4.7.4"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.30.5",
+    "@cloudflare/workers-types": "^4.20250317.0",
+    "@eslint/js": "^9.21.0",
+    "eslint": "^9.21.0",
+    "eslint-config-prettier": "^10.0.1",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.26.0",
+    "wrangler": "^4.37.0"
+  }
+}

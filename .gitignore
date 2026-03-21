@@ -82,6 +82,10 @@ out
 .nuxt
 dist
 
+# Wrangler 本地密钥（勿提交）
+.dev.vars
+backend/.dev.vars
+
 # Cloudflare Worker local state
 .wrangler/
 backend/migrations-drizzle-snapshot/

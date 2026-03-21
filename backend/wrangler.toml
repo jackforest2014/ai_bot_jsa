@@ -1,0 +1,33 @@
+# Cloudflare Worker — D1 迁移目录见 migrations/
+# R2：账号开通 bucket 后取消下面注释并恢复 Env 中的 FILES（任务 1.3）
+
+name = "ai-task-assistant"
+main = "src/index.ts"
+compatibility_date = "2025-03-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "task_assistant_db"
+database_name = "task-assistant-db"
+database_id = "12164d7e-af91-4020-9c62-fd197c83be73"
+migrations_dir = "migrations"
+
+# R2：在 Dashboard 创建 bucket `task-assistant-files` 后取消下面三行注释即可启用绑定（与代码中 binding 名 FILES 一致）
+# [[r2_buckets]]
+# binding = "FILES"
+# bucket_name = "task-assistant-files"
+
+# 非敏感默认可通过 vars；密钥请用 `wrangler secret put KEY` 或本地 .dev.vars
+# 预签名下载 URL（可选）：填 R2_ACCOUNT_ID + 下面 bucket 名 + S3 API 令牌（见 README）
+[vars]
+LLM_PROVIDER = "gemini"
+LLM_MODEL = "gemini-2.0-flash-lite"
+R2_BUCKET_NAME = "task-assistant-files"
+# Qdrant：集群 URL（非密钥）；API Key 用 .dev.vars / wrangler secret put QDRANT_API_KEY
+QDRANT_URL = "https://302a1df3-da67-4b97-95eb-cc58281d41a4.us-east4-0.gcp.cloud.qdrant.io"
+QDRANT_COLLECTION = "memory"
+EMBEDDING_DIMENSIONS = "768"
+# R2_ACCOUNT_ID = "你的 Cloudflare 账户 ID"
+
+# [env.preview]
+# vars = { ... }

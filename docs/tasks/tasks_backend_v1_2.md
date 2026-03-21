@@ -26,11 +26,12 @@
 - 实现 `FileStorage` 接口及 `R2Storage` 实现。
 - 编写分片上传初始化、分片上传、完成上传、删除、签名 URL 等方法。
 
-#### 任务 1.4：向量数据库 Qdrant 配置（1h）
+#### 任务 1.4：向量数据库 Qdrant 配置（1h）✅
 - 注册 Qdrant Cloud 免费层，创建 collection。
 - **向量维度与所选 Gemini（或替代）Embedding 模型官方文档一致**，在环境变量或配置中显式记录维度。
 - 配置环境变量（QDRANT_URL, QDRANT_API_KEY）。
 - 编写 `VectorStore` 接口及 `QdrantStore` 基础实现（upsert, search, delete）；payload 支持 `user_id`、`semantic_type`、**`folder_path`/`tags`**（与技术方案 §4.2 一致）。
+- **落地**：`wrangler.toml` 已填 `QDRANT_URL`；`QDRANT_API_KEY` 仅 `.dev.vars`（已 gitignore）/ 生产用 `wrangler secret put`；`npm run qdrant:ensure-collection` 已创建 **`memory`**（768 / Cosine）；`GET /health/qdrant` 可验连通。
 
 #### 任务 1.5：基础工具类与错误处理（1h）
 - 编写统一错误处理中间件（Hono `onError`）。
