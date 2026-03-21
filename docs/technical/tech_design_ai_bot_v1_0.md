@@ -1069,6 +1069,7 @@ vars = { GEMINI_API_KEY = "prod-key", ... }
 ```
 > 开启 `nodejs_compat` 后，可直接使用 Cloudflare 内置的 Node.js 核心 API（如 `Buffer`、`EventEmitter`），这些 API 不计入 Worker 体积，有助于进一步缩小最终 bundle。
 
+
 ### 15.3 初始化 D1 数据库
 ```bash
 # 创建数据库
