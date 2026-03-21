@@ -82,6 +82,10 @@ out
 .nuxt
 dist
 
+# Cloudflare Worker local state
+.wrangler/
+backend/migrations-drizzle-snapshot/
+
 # Gatsby files
 .cache/
 # Comment in the public line in if your project uses Gatsby and not Next.js

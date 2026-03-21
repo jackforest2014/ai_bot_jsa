@@ -1,157 +1,179 @@
 # 前端开发任务列表（按时间顺序）
 
-本文档基于 [产品需求 PRD v1.1](../products/ai_bot_v1_1.md)、[后端技术设计方案 `tech_design_ai_bot_v1_2.md`](../technical/tech_design_ai_bot_v1_2.md)（文档版本至 **1.3**）及 [后端任务列表 `tasks_backend_v1_2.md`](tasks_backend_v1_2.md) 拆解前端任务，按阶段组织。任务粒度以 1 小时为单位，便于进度跟踪。可并行执行的任务放在同一阶段内并列列出。
-
-**与技术方案对齐的要点**：对话流式接口为 **SSE**（非 WebSocket）；除 `token` / `tool_call` / `intention` / `done` 外，后端可下发 **`tool_result_meta`**、**`citation`**（§5.1），用于 PRD 要求的来源悬停展示。文件上传大文件走 **initiate-multipart → XHR 分片直传 R2 → complete-multipart**（§12.1），进度由前端计算。
-
-**范围说明**：`projects` 分组、TOT/GOT 相关 UI（若有）为 **可选**，与 PRD v1.1 验收解耦。
+本文档基于 [前端技术设计方案 v1.2](../technical/tech_design_frontend_v1_2.md) 与产品需求文档拆解任务，按阶段组织。任务粒度以 1 小时为单位，便于进度跟踪。可并行执行的任务放在同一阶段内并列列出。
 
 ---
 
-## 阶段一：项目初始化与基础架构（预计总工时：6h）
+## 阶段一：项目初始化与基础架构（预计总工时：9h）
 
 ### 任务 1.1：项目脚手架搭建（2h）
-- 使用 Vite + React + TypeScript 初始化项目。
+- 使用 Vite + React 18 + TypeScript 初始化项目。
 - 配置 Tailwind CSS、PostCSS、Autoprefixer。
 - 配置 ESLint、Prettier。
 - 设置路径别名（如 `@/` 指向 `src/`）。
-- 配置环境变量（**`VITE_API_BASE_URL`** 等）；**对话使用 SSE，无需配置 WS_URL**（若后续另增实时通道再补充）。
+- 配置环境变量 **`VITE_API_BASE`**（开发可用 `server.proxy` 兜底，**生产必须以该变量为唯一 API 根**，与技术方案 §5.1 一致）。
 
-### 任务 1.2：基础 UI 组件库选型与配置（2h）
-- 安装并配置 Vercel AI SDK（`ai`、`@ai-sdk/react`）；**评估默认 `useChat` 是否满足自定义 SSE 事件**：若不满足，需自定义 `fetch` / `ReadableStream` 解析或 EventSource 封装以接收 **`tool_result_meta`、`citation`、`intention`**（与技术方案 §5.1、后端任务 2.6 / 3.4 / 3.6 对齐）。
-- 安装并配置 `react-hook-form`（用于表单，如上传元数据、用户偏好）。
-- 安装 `react-hot-toast` 或类似通知库。
-- 安装 `react-dropzone`（用于拖拽上传区域）。
+### 任务 1.2：基础工具与类型定义（3h）
+- 安装依赖：`react-router-dom`、`zustand`、`react-hot-toast`、`idb`、`lodash`（按需）。
+- 编写全局类型（`src/types/`）：`user.ts`（含 **`preferences?: Record<string, unknown>`**）、`task.ts`（含 **`detail` / `detail_json`** 等与后端一致字段）、`file.ts`（**`folder_path`、`tags`、`processed`**）、`chat.ts`。
+- 新增 **`src/types/sse.ts`**（或与 `chat.ts` 拆分）：`SseEvent`、`ToolResultMeta`、`CitationPayload` 等，与后端 SSE 事件对齐（技术方案 §5.3、`lib/chat-stream`）。
+- 实现通用工具函数：时间格式化、文件大小转换、防抖节流。
 
-### 任务 1.3：全局状态管理与路由（2h）
-- 使用 Zustand 或 React Context 管理用户状态（登录信息、AI 昵称、**`preferences` 摘要**）。
-- 安装 React Router，配置基础路由（首页、工作空间、设置等）。
-- 创建布局组件（Header、Sidebar 可选）。
+### 任务 1.3：HTTP 客户端封装（2h）
+- 实现 `src/api/client.ts`：封装 `fetch`，**`request<T>` + `apiUrl(path)`**（拼接 `VITE_API_BASE`），自动携带 Token，统一 JSON / `FormData` 行为（技术方案 §5.1）。
+- 统一错误处理；对 **HTTP 413** 给出明确文案（**单文件不超过 64MB**，技术方案 §10）。
+- 实现请求重试（网络错误，最多 2 次）；**401** 跳转登录。
 
----
-
-## 阶段二：核心对话界面（预计总工时：14h）
-
-### 并行任务组 A（可并行执行，总工时：7h）
-
-#### 任务 2.1：对话容器组件（2h）
-- 实现 `ChatContainer` 组件，包含消息列表区域和输入区域。
-- 使用 Vercel AI SDK 的 `useChat` **或** 自研 SSE 消费逻辑接入消息流（需与后端 **`POST /api/chat/stream`** 契约一致）。
-- 实现消息列表滚动、自动滚动到底部。
-- 可选：根据 SSE **`intention`** 事件展示轻量状态（如「正在搜索…」），与技术方案一致即可。
-
-#### 任务 2.2：消息渲染组件（2h）
-- 实现 `Message` 组件，区分用户消息和 AI 消息样式。
-- 支持 Markdown 渲染（`react-markdown`）。
-- 支持代码高亮（`remark-gfm`、`rehype-highlight`）。
-
-#### 任务 2.3：富文本标记、SSE 引用与悬浮窗（3h）
-- 解析并渲染正文中的 **`<tool>` / `<rag>`**（及 PRD 示例中的 `<rag source="file" data='...'>`），与 **SSE `citation` 事件**（`file_id`、`filename`、`semantic_type`、`excerpt` 等）**合并或关联展示**，避免悬浮层与正文脱节。
-- 监听 **`tool_result_meta`**（尤其 `tool === "search"`）：悬停展示标题、链接、摘要、日期等结构化字段，**不依赖从纯文本猜 JSON**。
-- 使用 `react-popper`、Headless UI Tooltip 或原生 CSS 实现悬浮层；定义前后端统一的 **TypeScript 类型**（事件 payload）。
-- 当后端返回 Serper **软上限/降级**类提示时，在气泡内友好展示（与后端配额逻辑配合，见技术方案 §14）。
-
-### 并行任务组 B（可并行执行，总工时：7h）
-
-#### 任务 2.4：输入框与发送功能（2h）
-- 实现 `ChatInput` 组件，支持多行文本、回车发送、Shift+Enter 换行。
-- 发送时禁用按钮，等待响应后恢复。
-- 显示「正在输入」或流式输出状态（AI 响应中）。
-
-#### 任务 2.5：用户信息、偏好与 AI 昵称（3h）
-- 实现首次访问时的信息收集弹窗（姓名、邮箱），与 **`GET/PUT /api/user`** 对齐。
-- **设置页或表单**：支持编辑 **`preferences`**（如回复风格），写入 `preferences_json`（技术方案 §5.2）。
-- 实现 AI 昵称修改（**`/api/user/ai-name`**）。
-- 在对话界面头部显示 AI 昵称和用户姓名。
-
-#### 任务 2.6：任务列表侧边栏（可选，2h）
-- 实现侧边栏显示任务列表（简洁模式，可展开）。
-- 点击任务可快速在对话中提及。
-- 支持标记完成、删除等（调用后端 API）；若产品需要展示 **子任务**，与 **`detail` / `detail_json`** 字段对齐（技术方案 §5.3）。
+### 任务 1.4：路由配置与守卫（2h）
+- 配置基础路由（`/`、`/files`、`/settings`、`/login`）。
+- 实现 `RequireAuth`，检查登录状态。
+- 实现首次访问引导（未登录跳转 `/login`，登录后回跳原页面）。
 
 ---
 
-## 阶段三：个人工作空间（文件管理）（预计总工时：19h）
+## 阶段二：全局状态与用户模块（预计总工时：7h）
 
-### 并行任务组 C（可并行执行，总工时：10h）
+### 并行任务组 A（可并行执行，总工时：4h）
 
-#### 任务 3.1：文件浏览器基础组件（3h）
-- 实现 `FileBrowser` 组件，支持网格/列表视图切换。
-- 实现文件卡片/行组件：展示图标、文件名、大小、上传时间、**语义类型**、**`folder_path`（若有）**、**`tags`（如 important）**、**`processed` 状态**（0 处理中、1 已索引、-1 失败可提示重试）。
-- **路径导航**：支持按 **`folder_path` 前缀**浏览（与技术方案 `GET /api/files?folder=` 一致）；v1.1 为逻辑路径字符串，UI 可用面包屑或文件夹筛选而**非**完整树形文件系统也可接受。
+#### 任务 2.1：用户状态管理（Zustand）（2h）
+- 创建 `src/store/userStore.ts`：用户信息（**含 `preferences`**）、AI 昵称、与 Token 协同。
+- 实现 `setUser`、`setAiNickname`、**`setPreferences`**、`clearUser`。
+- 持久化中间件：`user` / `token` 与 **`preferences` 摘要**写入 localStorage，与 `GET/PUT /api/user` 一致（技术方案 §4、§7）。
 
-#### 任务 3.2：拖拽上传与分片进度（4h）
-- 集成 `react-dropzone`，工作区内拖拽触发上传流程。
-- **小文件**：`multipart/form-data` 直连 Worker；**大文件**：调用 **`initiate-multipart`**，使用 **XMLHttpRequest** 上传各分片至预签名 URL，**累积 `onprogress` 得到总进度**（技术方案 §12.1）。
-- 上传前 **客户端校验单文件 ≤ 64MB**（与 PRD / 技术方案一致）。
-- 上传时显示**虚线占位节点**与进度条；成功后实线并刷新列表；失败红框、错误文案、**重试**（分片级或整单重试按后端约定）。
+#### 任务 2.2：UI 状态管理（2h）
+- 创建 `src/store/uiStore.ts`：全局加载、侧边栏折叠、通知队列。
+- 增加对话相关态：**`chatStatus`**（如 `idle` | `thinking` | `searching` | `researching`），供 **SSE `intention`** 或工具起止驱动「正在搜索…」「正在整理研究结果…」等（技术方案 §6.2.5、§7）。
 
-#### 任务 3.3：文件操作 UI（3h）
-- 右键菜单或操作按钮：**重命名、删除、下载**。
-- **标签**：展示 `tags`；提供「标记重要」等快捷操作，调用 **`PUT /api/files/:id/tags`**（覆盖式，与技术方案 §5.4.7 一致）。
-- 删除确认弹窗；**语义类型**修改（下拉 + 可选自定义），调用现有语义类型接口。
+### 并行任务组 B（可并行执行，总工时：3h）
 
-### 并行任务组 D（可并行执行，总工时：9h）
+#### 任务 2.3：用户信息 API 封装（1h）
+- 创建 `src/api/user.ts`：`getUser`、`updateUser`（**支持 `preferences`**）、`setAiNickname`。
+- 类型与 `client` 集成。
 
-#### 任务 3.4：文件上传元数据弹窗（2h）
-- 弹窗必填 **语义类型**；可选 **自定义语义类型**。
-- 可选：在上传前选择 **目标 `folder_path`**（或默认根路径），与 **initiate-multipart / 小文件上传** 请求字段一致。
-- 弹窗确认后启动上传。
-
-#### 任务 3.5：文件列表与后端 API 对接（4h）
-- 实现 `useFiles` hook：**列表（含 `folder`、`type` 查询参数）**、小文件上传、**分片上传全流程**、删除、重命名、下载 URL、**更新 tags**、更新语义类型。
-- 处理加载态、错误态；**`processed === -1`** 时提示用户可稍后重试或联系支持（与后端异步解析一致）。
-- 分页或无限滚动（可选）。
-
-#### 任务 3.6：文件搜索、筛选与排序（3h）
-- 按文件名搜索（前端过滤或后端扩展，优先与现有 API 能力对齐）。
-- 按 **语义类型**、**`folder_path`（当前前缀下）** 筛选。
-- 排序：时间、名称、大小。
+#### 任务 2.4：登录与空资料态（2h）
+- 实现 `/login`：建立 Token / 会话（技术方案 §8.2：**身份仍须由登录或等价流程建立**）。
+- 对话页支持 **资料未全量时的空资料态**：不阻塞进入 Chat，与 PRD「AI 在对话内引导补全」一致；设置页作为补充入口。
 
 ---
 
-## 阶段四：系统集成与用户体验优化（预计总工时：11h）
+## 阶段三：对话模块（预计总工时：18h）
 
-### 并行任务组 E（可并行执行，总工时：11h）
+### 并行任务组 C（可并行执行，总工时：11h）
 
-#### 任务 4.1：全局通知与错误处理（3h）
-- 集成 `react-hot-toast`，统一处理 API 错误、上传失败、**搜索服务降级/配额提示**（后端文案透传或错误码映射）。
-- **浏览器通知**（在用户授权前提下）：文件上传成功/失败（PRD 2.5.3）。
+#### 任务 3.1：对话流与 SSE 集成（4h）
+- 安装 `ai`、`@ai-sdk/react`（若采用）。
+- **流式 URL 必须使用 `apiUrl('/api/chat/stream')`**，禁止生产环境依赖无前缀 `'/api/...'` 指向前端 origin（技术方案 §5.1、§5.3）。
+- 实现 **`src/lib/chat-stream.ts`** + **`useChatStream`（或等价）**：解析 SSE，消费 **`token`、`tool_call`、`tool_result_meta`、`citation`、`done`**，可选 **`intention`**；将元数据挂到当前 assistant 消息或 Store（技术方案 §5.3）。
+- 若 `useChat` 无法透传自定义事件，采用 **`fetch` + `ReadableStream` 自解析** 或与官方 **transport / `experimental_transform`** 组合（以所用 `ai` 版本为准）。
 
-#### 任务 4.2：用户认证与会话管理（2h）
-- 实现 token 或 session 管理（`Authorization` 头，与技术方案一致）。
-- 实现登录页或与信息收集整合。
-- 处理未登录跳转。
+#### 任务 3.2：消息渲染组件（3h）
+- 实现 `Message`：用户 / AI 样式区分；`react-markdown` + `remark-gfm` + `rehype-highlight`；复制代码块。
+- 解析 `<rag>` / `<tool>`：**优先与 SSE `citation` / `tool_result_meta` 关联**，标签解析作降级（技术方案 §6.2.1）。
 
-#### 任务 4.3：响应式与移动端适配（2h）
-- Tailwind 响应式，移动端（最小约 375px）基本可用。
-- 对话布局：侧边栏可折叠；工作空间在小屏可用底部 Tab 或抽屉切换。
+#### 任务 3.3：工具标记与 RAG 引用 UI（4h）
+- 实现 **`ToolCallMark.tsx`**：悬浮数据主要来自 **`tool_result_meta`**（无事件时降级正文解析）。
+- 实现 **`RagCitation.tsx`**：绑定 **`citation`** 与正文 `<rag>`（技术方案 §6.1、§6.2.2）。
+- 悬浮层：`react-popper` 或 CSS 定位。
 
-#### 任务 4.4：性能优化与代码分割（2h）
-- `React.lazy` 分割工作空间、设置页等。
-- 列表虚拟化（可选，大文件列表时）。
-- 适度使用 `useMemo` / `useCallback`。
+### 并行任务组 D（可并行执行，总工时：7h）
 
-#### 任务 4.5：本地存储与离线缓存（2h）
-- localStorage 缓存用户信息、AI 昵称、**preferences 副本**（以服务端为准，冲突时刷新）。
-- 文件列表短时缓存（可选，注意失效策略）。
+#### 任务 3.4：输入框组件（2h）
+- `ChatInput`：多行、回车发送、Shift+Enter 换行；发送中禁用与思考态动画；**中止进行中的流式请求**。
+
+#### 任务 3.5：任务侧边栏与任务 API（3h）
+- 实现 `src/api/tasks.ts`（或经 `useTasks` 封装）：`list`（**`status`、`project_id` 查询**）、`create` / `update` / `delete`，类型含 **`detail`**（技术方案 §5.2）。
+- `TaskSidebar`：列表与筛选；点击插入快捷指令；完成 / 删除等操作。
+- **展示或展开任务 `detail` / 子任务信息**（与对话互补，技术方案 §3 任务模块）。
+
+#### 任务 3.6：对话错误、重试与限流提示（2h）
+- 流式 / `useChat` `onError`：`toast` 提示；消息级重试。
+- **Serper 软限、降级等后端文案**：在气泡或 toast 中原样友好展示，不阻断其它能力（技术方案 §6.2.5、PRD 2.6.2）。
 
 ---
 
-## 阶段五：测试与部署（预计总工时：8h）
+## 阶段四：个人工作空间（文件管理）（预计总工时：22h）
 
-### 并行任务组 F（可并行执行，总工时：8h）
+### 并行任务组 E（可并行执行，总工时：12h）
 
-#### 任务 5.1：单元测试与组件测试（3h）
-- Vitest + React Testing Library：消息渲染、**SSE payload 解析与 citation/tool_result_meta 合并逻辑**（可 mock EventSource/stream）、富文本标记解析。
-- Mock 上传与 `useFiles`（含分片流程状态机）。
+#### 任务 4.1：文件列表组件（3h）
+- `FileList`：网格 / 列表切换；**`GET /api/files` 支持 `?folder=`、`?type=`**（技术方案 §5.2）；可选 **`FolderBreadcrumb`** 与 folder 前缀一致。
+- **`FileCard`**：文件名、大小、时间、语义类型、**`tags`**、**`folder_path`**、**`processed`**（`0` / `1` / `-1` 态与提示，技术方案 §6.2.3）。
+- 操作：重命名、删除、下载、改语义类型、**编辑 tags（`PUT /api/files/:id/tags`）**。
 
-#### 任务 5.2：端到端测试（3h）
-- Playwright：首次访问姓名邮箱、对话、创建任务、**上传（含大文件分片可选一条用例）**、验证 RAG/引用展示、修改昵称、**工作区 tags / folder 筛选**。
+#### 任务 4.2：上传核心逻辑（双路径 + 分片）（5h）
+- 实现 **`useFileUpload`**：
+  - 选择后 **客户端校验 `size <= 64MB`**，否则中止并提示（技术方案 §6.2.4、§11）。
+  - **小文件**（与后端约定如 **≤5MB**）：`FormData` → **`POST /api/files/upload`**（字段 `file`、`semantic_type`，可选 **`folder_path`、`tags`（JSON 字符串）**）。
+  - **更大且 ≤64MB**：`initiate-multipart` → 分片 `PUT` 预签名 URL → **`complete-multipart` 提交 `upload_id`、`r2_key`（来自 initiate 响应）、`parts`**（技术方案 §11）。
+- XHR `upload.onprogress`、失败与分片级 / 整单重试。
 
-#### 任务 5.3：构建与部署（2h）
-- Vite 生产构建优化。
-- 部署到 Cloudflare Pages 或 Vercel；环境变量指向后端 API。
+#### 任务 4.3：上传进度与状态反馈（4h）
+- `UploadProgress`、占位虚线节点、完成实线、失败红框与重试（PRD 2.5.3）。
+- 成功 / 失败：**toast + 可选 `Notification`**（与阶段五可合并验收）。
+
+### 并行任务组 F（可并行执行，总工时：10h）
+
+#### 任务 4.4：拖拽上传区域（2h）
+- `react-dropzone`；点击选择文件。
+
+#### 任务 4.5：元数据弹窗（2h）
+- `SemanticTypeModal`（`react-hook-form`）：必填语义类型；可选 **`folder_path`、初始 `tags`**（技术方案 §6.2.4）。
+- 语义类型选项：后端或预定义列表。
+
+#### 任务 4.6：文件操作 API 封装（2h）
+- `src/api/files.ts`：**`list`（query）**、**`uploadSmall`**、**`initiateMultipart`**、**`completeMultipart`**、**`updateTags`**、`delete`、`rename`、`updateSemanticType`、`download`（技术方案 §5.2）。
+- 下载：签名 URL 触发浏览器下载。
+
+#### 任务 4.7：文件搜索、筛选与排序（2h）
+- 文件名搜索（防抖）、语义类型筛选、排序（时间 / 名称 / 大小）。
+- **`useFiles`（可选）**：与列表刷新、缓存 key 策略配合（技术方案 §9）。
+
+#### 任务 4.8：Hooks 与 IndexedDB 键策略（2h）
+- `useFiles` / `useFileUpload` 与 API、Store 边界清晰。
+- 文件列表缓存：**按 `folder` 前缀或查询串区分 IndexedDB key**，避免陈旧数据（技术方案 §4.1、§9）。
+
+---
+
+## 阶段五：系统集成与用户体验优化（预计总工时：13h）
+
+### 并行任务组 G（可并行执行，总工时：13h）
+
+#### 任务 5.1：全局通知与错误处理（2h）
+- `react-hot-toast` 统一 success / error。
+- 上传成功 / 失败：**Notification API**（用户授权后，技术方案 §1 选型表）。
+
+#### 任务 5.2：用户设置页面（3h）
+- `/settings`：用户信息、**偏好 `preferences` 表单**（`PUT /api/user` 与 Store 同步）、AI 昵称（技术方案 §8.1、§7.2）。
+
+#### 任务 5.3：离线缓存策略（3h）
+- `idb` 封装；文件列表离线读取与 **离线提示**。
+- 与 **folder / tags 变更** 的失效或分区策略一致（技术方案 §4.1）。
+
+#### 任务 5.4：响应式与移动端适配（2h）
+- Tailwind 断点；对话侧栏可折叠；工作空间网格小屏单列。
+
+#### 任务 5.5：性能优化与代码分割（2h）
+- `React.lazy`：`/files`、`/settings`（及技术方案建议的 Chat 等按需分割）。
+- `useMemo` / `useCallback` 优化长列表；可选虚拟滚动（技术方案 §9）。
+
+#### 任务 5.6：本地存储与持久化（1h）
+- localStorage：`user`（含 **preferences 摘要**）、`token`；与后端拉取一致。
+
+---
+
+## 阶段六：测试与部署（预计总工时：13h）
+
+### 并行任务组 H（可并行执行，总工时：13h）
+
+#### 任务 6.1：单元测试与组件测试（4h）
+- Vitest + RTL：**SSE 解析**、**上传状态机**、**64MB 校验**；`Message` + 引用、`ToolCallMark`、`FileCard`（**`processed` 态**）、工具函数（技术方案 §14）。
+
+#### 任务 6.2：端到端测试（Playwright）（5h）
+- 登录 → 对话；**流式对话与元数据**（若有稳定桩）。
+- 任务列表与 **detail**；**小文件与分片上传**（含 **`r2_key` 完成流**）；**tags / folder**；**preferences**；修改 AI 昵称；离线缓存展示。
+
+#### 任务 6.3：构建与部署（4h）
+- Vite 生产构建；部署 Cloudflare Pages / Vercel；**生产环境变量 `VITE_API_BASE`**；CORS 由后端配置（技术方案 §12）。
 
 ---
 
@@ -159,21 +181,22 @@
 
 | 阶段 | 工时 |
 |------|------|
-| 阶段一：项目初始化与基础架构 | 6h |
-| 阶段二：核心对话界面 | 14h |
-| 阶段三：个人工作空间（文件管理） | 19h |
-| 阶段四：系统集成与用户体验优化 | 11h |
-| 阶段五：测试与部署 | 8h |
-| **总计** | **58h** |
+| 阶段一：项目初始化与基础架构 | 9h |
+| 阶段二：全局状态与用户模块 | 7h |
+| 阶段三：对话模块 | 18h |
+| 阶段四：个人工作空间（文件管理） | 22h |
+| 阶段五：系统集成与用户体验优化 | 13h |
+| 阶段六：测试与部署 | 13h |
+| **总计** | **82h** |
 
-按每日有效工作 6 小时计算，约需 **10 个工作日**（不含并行优化）。并行任务可多人同时进行，实际交付周期可缩短。
+按每日有效工作 6 小时计算，约需 **14 个工作日**（不含并行优化）。并行任务可多人同时进行，实际交付周期可缩短。
 
 ---
 
 ## 并行执行建议
 
-- **阶段二**：任务组 A（容器、Markdown、**SSE 引用与悬浮**）与组 B（输入、**用户偏好**、任务侧栏）可并行；**A 的 2.3 与后端 SSE 契约需先对齐接口类型**（可参考后端任务 3.6）。
-- **阶段三**：组 C（浏览器、**分片上传**、标签）与组 D（元数据弹窗、**useFiles**、筛选）可并行；**3.2 与 3.5 宜同一开发者或先约定 hook 接口**。
-- **阶段四、五**可与功能开发并行。
+- **阶段三**：组 C（SSE、消息、ToolCallMark/RagCitation）与组 D（输入框、任务侧栏含 tasks API、错误与限流文案）可并行，2 人约 4 天量级。
+- **阶段四**：组 E（列表、双路径上传、进度）与组 F（拖拽、弹窗含 folder/tags、完整 files API、搜索、IndexedDB 键）可并行，2 人约 4～5 天量级。
+- **阶段五、六** 可与功能开发中后期穿插（测试用例、部署流水线）。
 
-此任务列表可根据实际团队配置灵活调整，确保每个任务粒度可追踪。
+任务列表随 [tech_design_frontend_v1_2.md](../technical/tech_design_frontend_v1_2.md) 与后端 §5 契约变更而修订，**以仓库内设计与 OpenAPI（若有）为单一事实来源**。
