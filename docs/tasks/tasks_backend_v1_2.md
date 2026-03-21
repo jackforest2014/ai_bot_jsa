@@ -33,10 +33,11 @@
 - 编写 `VectorStore` 接口及 `QdrantStore` 基础实现（upsert, search, delete）；payload 支持 `user_id`、`semantic_type`、**`folder_path`/`tags`**（与技术方案 §4.2 一致）。
 - **落地**：`wrangler.toml` 已填 `QDRANT_URL`；`QDRANT_API_KEY` 仅 `.dev.vars`（已 gitignore）/ 生产用 `wrangler secret put`；`npm run qdrant:ensure-collection` 已创建 **`memory`**（768 / Cosine）；`GET /health/qdrant` 可验连通。
 
-#### 任务 1.5：基础工具类与错误处理（1h）
+#### 任务 1.5：基础工具类与错误处理（1h）✅
 - 编写统一错误处理中间件（Hono `onError`）。
 - 实现日志工具（`logger.ts`）。
 - 定义自定义错误类（ValidationError, DatabaseError, LLMError, FileSizeError）。
+- **落地**：`app.onError` + `handle-error.ts`；`src/lib/logger.ts`；`src/errors/*`；`app.notFound` 返回 JSON。
 
 ---
 
@@ -44,34 +45,39 @@
 
 #### 并行任务组 A（可并行执行，总工时：19h）
 
-##### 任务 2.1：LLM Provider 抽象与 Gemini 实现（4h）
+##### 任务 2.1：LLM Provider 抽象与 Gemini 实现（4h）✅
 - 定义 `LLMProvider` 接口（chat, streamChat, embed）。
 - 实现 `GeminiProvider`，处理消息格式转换、工具定义。
 - 解析 API 响应，提取 usageMetadata。
 - 实现 `embed` 方法，调用 Gemini 嵌入模型（维度与 Qdrant collection 一致）。
+- **落地**：`src/llm/*`（`GeminiProvider`、`createGeminiProvider`、`hasGeminiConfig`）；`GEMINI_API_KEY` + `EMBEDDING_MODEL`（默认 `text-embedding-004`）；`GET /health/llm`；`embed` 按 `EMBEDDING_DIMENSIONS` 校验长度。
 
-##### 任务 2.2：记忆召回模块 MemoryService（4h）
+##### 任务 2.2：记忆召回模块 MemoryService（4h）✅
 - 实现 `MemoryService` 类，依赖 `VectorStore` 和 `LLMProvider`。
 - 实现 `retrieve` 方法：向量化用户输入，在 Qdrant 中检索相似片段。
 - 实现 `addToMemory` 方法：将对话/文档片段向量化并存储。
 - 支持按 `user_id` 过滤，支持 **`semantic_type` / `folder_path`（及 tags 若 payload 已存）** 过滤。
+- **落地**：`src/memory/*`；`retrieve` / `retrieveWithScores` / `retrieveForRag`（供 Chat SSE `citation`）；`addToMemory` + payload 含 `filename` 可选；`createMemoryService`；`GET /health/memory`。
 
-##### 任务 2.3：工具注册与调用模块 ToolRegistry（5h）
+##### 任务 2.3：工具注册与调用模块 ToolRegistry（5h）✅
 - 设计 `Tool` 接口（name, description, parametersSchema, execute）；execute 侧可注入 **当前 userId**（与技术方案 `ToolContext` 示意一致）。
 - 实现 `ToolRegistry` 类：注册工具、获取工具定义、执行工具调用。
 - **`SearchTool`**：调用 Serper，**type 枚举与方案一致**（organic, news, images, videos, places, shopping, scholar, patents）；集成 **`SerperUsageRepository` / SerperQuotaService**：成功调用后递增 `serper_usage`，超软上限时友好提示（技术方案 §14）。
 - **`WorkspaceFilesTool`（`manage_workspace_files`）**：封装列表/删除/重命名/更新语义类型/标签，内部调用 `FileService.handleToolAction`，严禁越权。
 - 编写 **`UserTool`**（若方案中独立存在）或与用户更新逻辑对齐的工具；**`plan_research`** 可在阶段三与 PlannerService 一并注册。
+- **落地**：`src/serper/*`、`src/files/file-service.ts`、`search` / `manage_workspace_files` / `update_user_profile`；`SERPER_DAILY_SOFT_LIMIT`；`GET /health/serper`；`plan_research` 仍留待阶段三。
 
-##### 任务 2.4：Prompt 模板管理模块（3h）
+##### 任务 2.4：Prompt 模板管理模块（3h）✅
 - 实现 `PromptRepository`，提供增删改查方法。
 - 实现 `PromptService`：加载模板、渲染变量（用户姓名、AI 昵称、**`preferences_json` 摘要**、工具定义）。
 - 编写默认模板（default, interview, research）并插入数据库；**default 模板须包含 `manage_workspace_files` 职责说明**（技术方案 §7.4 / 迁移默认数据）。
+- **落地**：`PromptRepository` 已具备 CRUD；`PromptService.render` 注入 `{{PREFERENCES_BLOCK}}` / `{{PREFERENCES_SUMMARY}}` 与 `{{TOOLS_DEFINITIONS}}`；迁移 **`0008_prompt_templates_scenarios.sql`** 更新 default 并 **INSERT** `interview` / `research`；`src/prompt/index.ts`。
 
-##### 任务 2.5：意图分类器（3h）
+##### 任务 2.5：意图分类器（3h）✅
 - 实现 `IntentClassifier` 接口及 `RuleBasedIntentClassifier`（关键词匹配）。
 - 定义意图类别：**greeting, task_operation, interview, research, file_upload, `workspace_operation`, default**（与技术方案 §9.6 一致）。
 - 编写正则表达式模式。
+- **落地**：`src/intent/*`（`KNOWN_INTENTS`、有序 `RULES`、`file_upload` 优先于 `workspace_operation`）；`getDefaultIntentRules()`；`classify` 末尾回退 `default`（避免文档示例中 `/.*/` 误匹配）。
 
 #### 并行任务组 B（可并行执行，总工时：21h）
 

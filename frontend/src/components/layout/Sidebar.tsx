@@ -1,11 +1,21 @@
 import { NavLink } from 'react-router-dom'
 
+import { useUiStore } from '@/store/uiStore'
+
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `block rounded-md px-3 py-2 text-sm font-medium ${
     isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
   }`
 
 export default function Sidebar() {
+  const collapsed = useUiStore((s) => s.sidebarCollapsed)
+
+  if (collapsed) {
+    return (
+      <aside className="w-0 shrink-0 overflow-hidden border-r border-transparent" aria-hidden />
+    )
+  }
+
   return (
     <aside className="w-52 shrink-0 border-r border-slate-200 bg-slate-50 p-3">
       <nav className="flex flex-col gap-1">

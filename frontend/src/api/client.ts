@@ -1,4 +1,5 @@
-import { clearStoredToken, TOKEN_STORAGE_KEY } from '@/router/guards'
+import { TOKEN_STORAGE_KEY } from '@/router/guards'
+import { useUserStore } from '@/store/userStore'
 
 const API_BASE = import.meta.env.VITE_API_BASE?.replace(/\/$/, '') ?? ''
 
@@ -28,7 +29,7 @@ function loginRedirectPath(): string {
 }
 
 function redirectToLogin(): void {
-  clearStoredToken()
+  useUserStore.getState().clearUser()
   window.location.assign(loginRedirectPath())
 }
 
@@ -52,7 +53,8 @@ export async function request<T>(endpoint: string, options?: RequestInit): Promi
 
   const exec = async (): Promise<Response> => {
     const headers = new Headers(options?.headers)
-    const token = localStorage.getItem(TOKEN_STORAGE_KEY)?.trim()
+    const token =
+      useUserStore.getState().token?.trim() || localStorage.getItem(TOKEN_STORAGE_KEY)?.trim()
     if (token) headers.set('Authorization', `Bearer ${token}`)
     if (options?.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json')

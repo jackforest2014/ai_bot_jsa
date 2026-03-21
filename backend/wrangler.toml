@@ -22,6 +22,10 @@ migrations_dir = "migrations"
 [vars]
 LLM_PROVIDER = "gemini"
 LLM_MODEL = "gemini-2.0-flash-lite"
+# Gemini embedContent 模型 id，须与 EMBEDDING_DIMENSIONS、Qdrant collection 一致
+EMBEDDING_MODEL = "text-embedding-004"
+# Serper：密钥用 .dev.vars / secret；软上限为「成功搜索」计数/用户/UTC 日
+SERPER_DAILY_SOFT_LIMIT = "80"
 R2_BUCKET_NAME = "task-assistant-files"
 # Qdrant：集群 URL（非密钥）；API Key 用 .dev.vars / wrangler secret put QDRANT_API_KEY
 QDRANT_URL = "https://302a1df3-da67-4b97-95eb-cc58281d41a4.us-east4-0.gcp.cloud.qdrant.io"

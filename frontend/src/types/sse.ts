@@ -12,16 +12,30 @@ export type SseEventName =
 export interface ToolResultMetaPayload {
   tool?: string
   query?: string
+  /** Serper 软限/降级等后端文案（任务 3.6 / PRD 2.6.2） */
+  notice?: string
+  quota_warning?: string
+  degraded?: boolean
+  /** 后端技术方案 §5.1 使用 `items` 列表 */
+  items?: Array<{
+    title?: string
+    url?: string
+    snippet?: string
+    date?: string | null
+    [key: string]: unknown
+  }>
   results?: Array<{
     title?: string
     url?: string
     snippet?: string
     [key: string]: unknown
   }>
+  raw_ref?: string
   [key: string]: unknown
 }
 
 export interface CitationPayload {
+  kind?: string
   file_id?: string
   filename?: string
   semantic_type?: string

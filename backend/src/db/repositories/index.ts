@@ -1,4 +1,9 @@
 export {
+  ConversationRepository,
+  type ConversationRow,
+  type NewConversationRow,
+} from './conversation-repository';
+export {
   FileRepository,
   type FileUploadRow,
   type ListFilesFilter,

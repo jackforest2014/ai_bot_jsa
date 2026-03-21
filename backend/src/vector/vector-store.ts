@@ -8,6 +8,8 @@ export type MemoryVectorPayload = {
   source: string;
   timestamp: number;
   file_id?: string;
+  /** 可选展示名（D1 `original_name` 同步写入时供 citation 使用） */
+  filename?: string;
   semantic_type?: string;
   folder_path?: string;
   tags?: string[];
@@ -18,6 +20,8 @@ export interface VectorPoint {
   vector: number[];
   /** 与 Qdrant payload 一致的可索引元数据 */
   payload: MemoryVectorPayload | Record<string, unknown>;
+  /** 检索得分（Qdrant search 返回；upsert 时通常为空） */
+  score?: number;
 }
 
 export interface VectorStore {

@@ -1,6 +1,6 @@
 # ai-task-assistant Worker
 
-Cloudflare Workers + Hono + TypeScript。已完成任务 **1.1** 脚手架、**1.2** D1、**1.3** 文件存储抽象与 R2 实现（绑定可后开）、**1.4** Qdrant `VectorStore` 抽象与 `QdrantStore`（HTTP fetch）。
+Cloudflare Workers + Hono + TypeScript。已完成 **1.1–1.5**、**2.1–2.5**（含规则意图分类 §9.6）。
 
 ## 前置
 
@@ -43,6 +43,13 @@ Cloudflare Workers + Hono + TypeScript。已完成任务 **1.1** 脚手架、**1
    - 生产：`npx wrangler secret put QDRANT_API_KEY`；`QDRANT_URL` 可放在 Worker **Variables**（非密钥）或与密钥一同用 secret（团队约定即可）。  
    - **一键创建/校验 collection**（读取 `wrangler.toml` `[vars]` + `.dev.vars`）：`npm run qdrant:ensure-collection`（已存在则跳过创建）。  
    - 验证：`npm run dev` 后请求 **`GET /health/qdrant`**（已配置时应返回 `configured: true` 及 `status` / `points_count`）。
+8. **Gemini（任务 2.1）**  
+   - [Google AI Studio](https://aistudio.google.com/apikey) 创建 **API Key**，写入 `.dev.vars` 的 `GEMINI_API_KEY`；生产：`npx wrangler secret put GEMINI_API_KEY`。  
+   - 对话模型：`LLM_MODEL`（默认 `gemini-2.0-flash-lite`）；嵌入：`EMBEDDING_MODEL`（默认 `text-embedding-004`），**输出维度须与 `EMBEDDING_DIMENSIONS` 及 Qdrant `memory` collection 一致**（当前默认 768）。  
+   - 验证：`GET /health/llm`（仅检查是否已配置密钥，不调外部 API）。
+9. **长期记忆（任务 2.2）**  
+   - `MemoryService` = `VectorStore`（Qdrant）+ `LLMProvider.embed`。需 **Qdrant 与 `GEMINI_API_KEY` 同时就绪**，`GET /health/memory` 为 `configured: true` 时 `createMemoryService(c.env)` 非空。  
+   - 对话路由已用 `retrieveForRag` 注入上下文并下发 SSE `citation`。
 
 ## 任务 1.3 相关代码
 
@@ -58,8 +65,20 @@ Cloudflare Workers + Hono + TypeScript。已完成任务 **1.1** 脚手架、**1
 
 | 路径                    | 说明                                               |
 | ----------------------- | -------------------------------------------------- |
-| `migrations/*.sql`      | Wrangler D1 迁移（0001–0007）                      |
+| `migrations/*.sql`      | Wrangler D1 迁移（0001–0008，含场景化 prompt）     |
 | `src/vector/*`          | `VectorStore`、`QdrantStore`（REST，Workers 可用） |
+| `src/lib/logger.ts`     | 单行 JSON 日志（`wrangler tail`）                     |
+| `src/lib/handle-error.ts` | Hono `onError` 统一 JSON                              |
+| `src/errors/*`          | `AppError`、`ValidationError`、`DatabaseError` 等     |
+| `src/llm/*`             | `LLMProvider`、`GeminiProvider`、`embed` / `chat` / `streamChat` |
+| `src/memory/*`          | `MemoryService`、`retrieve` / `addToMemory` / `retrieveForRag`、`createMemoryService` |
+| `src/serper/*`          | Serper HTTP 客户端、`SerperQuotaService`、`serper_usage` 配合 |
+| `src/files/file-service.ts` | `FileService.handleToolAction`（`manage_workspace_files`） |
+| `src/tools/search-tool.ts`  | `search` 工具 |
+| `src/tools/workspace-files-tool.ts` | `manage_workspace_files` |
+| `src/tools/user-tool.ts`    | `update_user_profile` |
+| `src/prompt/*`              | `PromptService`、`formatPreferencesSummary`、`{{PREFERENCES_BLOCK}}` |
+| `src/intent/*`              | `IntentClassifier`、`RuleBasedIntentClassifier`、`KNOWN_INTENTS` |
 | `src/db/schema.ts`      | Drizzle 表定义                                     |
 | `src/db/repositories/*` | 各 Repository                                      |
 | `drizzle.config.ts`     | 可选 schema 对照；**正式迁移以 wrangler SQL 为准** |
@@ -91,6 +110,9 @@ curl http://127.0.0.1:8787/health/db
 curl http://127.0.0.1:8787/health/r2
 curl http://127.0.0.1:8787/health/storage
 curl http://127.0.0.1:8787/health/qdrant
+curl http://127.0.0.1:8787/health/llm
+curl http://127.0.0.1:8787/health/memory
+curl http://127.0.0.1:8787/health/serper
 # 启用 R2 绑定后可测（对不存在 key 调 head，验证绑定可用）：
 curl http://127.0.0.1:8787/health/r2/probe
 ```

@@ -1,5 +1,8 @@
 export const TOKEN_STORAGE_KEY = 'token'
 
+/** 与 tech_design §4.1 `localStorage.user` 一致，由 userStore 持久化写入 */
+export const USER_STORAGE_KEY = 'user'
+
 export function getStoredToken(): string | null {
   const t = localStorage.getItem(TOKEN_STORAGE_KEY)
   return t?.trim() ? t : null

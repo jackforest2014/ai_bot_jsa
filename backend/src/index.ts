@@ -1,27 +1,46 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { getDb, PromptRepository } from './db';
 import {
-  createFileStorage,
-  hasR2Binding,
-  hasR2PresignConfig,
-  type FileStorageEnv,
-} from './storage';
-import {
-  createQdrantStore,
-  hasQdrantConfig,
-  parseEmbeddingDimensions,
-  type QdrantEnv,
-} from './vector';
+  ConversationRepository,
+  FileRepository,
+  PromptRepository,
+  SerperUsageRepository,
+  TaskRepository,
+  UserRepository,
+  getDb,
+} from './db';
+import { createFileStorage, hasR2Binding, hasR2PresignConfig } from './storage';
+import { createQdrantStore, hasQdrantConfig, parseEmbeddingDimensions } from './vector';
+import { handleError } from './lib/handle-error';
+import { requireUserFromBearer } from './auth/resolve-user';
+import { ChatService } from './chat/chat-service';
+import { RuleBasedIntentClassifier } from './intent';
+import { PromptService } from './prompt';
+import { FileService, getMultipartPresignFromEnv } from './files';
+import { SerperQuotaService, parseSerperDailySoftLimit } from './serper';
+import { createSearchTool } from './tools/search-tool';
+import { ToolRegistry } from './tools/tool-registry';
+import { registerTaskTools } from './tools/task-tools';
+import { createUpdateUserProfileTool } from './tools/user-tool';
+import { createWorkspaceFilesTool } from './tools/workspace-files-tool';
+import { createGeminiProvider, hasGeminiConfig } from './llm';
+import { createMemoryService, hasMemoryServiceConfig } from './memory';
+import type { Env } from './env';
+import { fileRoutes } from './routes/files';
+import { taskRoutes } from './routes/tasks';
+import { userRoutes } from './routes/user';
 
-export type Env = FileStorageEnv &
-  QdrantEnv & {
-    task_assistant_db: D1Database;
-    LLM_PROVIDER: string;
-    LLM_MODEL: string;
-  };
+export type { Env };
 
 const app = new Hono<{ Bindings: Env }>();
+
+app.route('/api/tasks', taskRoutes);
+app.route('/api/user', userRoutes);
+app.route('/api/files', fileRoutes);
+
+app.onError(handleError);
+
+app.notFound((c) => c.json({ error: 'Not Found', code: 'NOT_FOUND' }, 404));
 
 app.use(
   '*',
@@ -44,6 +63,32 @@ app.get('/health', (c) =>
   c.json({
     status: 'ok',
     llm_model: c.env.LLM_MODEL,
+  }),
+);
+
+/** Gemini API Key 是否已配置（不发起外部请求） */
+app.get('/health/llm', (c) =>
+  c.json({
+    configured: hasGeminiConfig(c.env),
+    chat_model: c.env.LLM_MODEL,
+    embedding_model: c.env.EMBEDDING_MODEL ?? 'text-embedding-004',
+    note: '密钥：GEMINI_API_KEY（.dev.vars / wrangler secret）',
+  }),
+);
+
+app.get('/health/serper', (c) => {
+  const key = c.env.SERPER_API_KEY?.trim();
+  return c.json({
+    configured: !!key,
+    daily_soft_limit: parseSerperDailySoftLimit(c.env.SERPER_DAILY_SOFT_LIMIT),
+    note: key ? 'search 工具已注册' : '未配置 SERPER_API_KEY 时不注册 search 工具',
+  });
+});
+
+app.get('/health/memory', (c) =>
+  c.json({
+    configured: hasMemoryServiceConfig(c.env),
+    note: '需 Qdrant + GEMINI_API_KEY；业务侧使用 createMemoryService(c.env)',
   }),
 );
 
@@ -138,6 +183,83 @@ app.get('/health/db', async (c) => {
       500,
     );
   }
+});
+
+/**
+ * 对话流式（SSE）：任务 2.6 / 技术方案 §5.1
+ */
+app.post('/api/chat/stream', async (c) => {
+  if (!hasGeminiConfig(c.env)) {
+    return c.json(
+      { error: 'LLM 未配置', code: 'LLM_NOT_CONFIGURED' },
+      503,
+    );
+  }
+  const llm = createGeminiProvider(c.env);
+  if (!llm) {
+    return c.json({ error: 'LLM 未配置', code: 'LLM_NOT_CONFIGURED' }, 503);
+  }
+
+  const db = getDb(c.env.task_assistant_db);
+  const users = new UserRepository(db);
+  const user = await requireUserFromBearer(c.req.header('Authorization'), users);
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: '请求体须为 JSON', code: 'VALIDATION_ERROR' }, 400);
+  }
+  const msgRaw =
+    body && typeof body === 'object' && body !== null && 'message' in body
+      ? (body as { message: unknown }).message
+      : undefined;
+  const message = typeof msgRaw === 'string' ? msgRaw.trim() : '';
+  if (!message) {
+    return c.json({ error: 'message 不能为空', code: 'VALIDATION_ERROR' }, 400);
+  }
+
+  const promptRepo = new PromptRepository(db);
+  const promptService = new PromptService(promptRepo);
+  const conversationRepo = new ConversationRepository(db);
+  const toolRegistry = new ToolRegistry();
+  registerTaskTools(toolRegistry, new TaskRepository(db));
+  const filesRepo = new FileRepository(db);
+  toolRegistry.register(
+    createWorkspaceFilesTool(
+      new FileService(filesRepo, createFileStorage(c.env), getMultipartPresignFromEnv(c.env)),
+    ),
+  );
+  toolRegistry.register(createUpdateUserProfileTool(users));
+
+  const serperQuota = new SerperQuotaService(
+    new SerperUsageRepository(db),
+    parseSerperDailySoftLimit(c.env.SERPER_DAILY_SOFT_LIMIT),
+  );
+  const serperKey = c.env.SERPER_API_KEY?.trim();
+  if (serperKey) {
+    toolRegistry.register(createSearchTool({ apiKey: serperKey, quota: serperQuota }));
+  }
+
+  const memoryService = createMemoryService(c.env);
+
+  const chatService = new ChatService(
+    llm,
+    promptService,
+    new RuleBasedIntentClassifier(),
+    conversationRepo,
+    toolRegistry,
+    memoryService,
+  );
+
+  const stream = chatService.handleMessageStream({ user, userInput: message });
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    },
+  });
 });
 
 export default app;

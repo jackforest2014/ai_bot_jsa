@@ -109,3 +109,68 @@ export async function presignR2GetUrl(p: PresignR2GetParams): Promise<string> {
   const finalQs = `${canonicalQueryString}&X-Amz-Signature=${signature}`;
   return `https://${host}${canonicalUri}?${finalQs}`;
 }
+
+export type PresignR2UploadPartParams = {
+  accountId: string;
+  bucket: string;
+  key: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  expiresInSeconds: number;
+  uploadId: string;
+  partNumber: number;
+};
+
+/**
+ * S3 UploadPart 预签名 PUT（R2 兼容），供前端直传分片。
+ * @see https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPart.html
+ */
+export async function presignR2UploadPartUrl(p: PresignR2UploadPartParams): Promise<string> {
+  const region = 'auto';
+  const service = 's3';
+  const host = `${p.accountId}.r2.cloudflarestorage.com`;
+  const amzDate = formatAmzDate(new Date());
+  const dateStamp = amzDate.slice(0, 8);
+
+  const credential = `${p.accessKeyId}/${dateStamp}/${region}/${service}/aws4_request`;
+  const canonicalUri = `/${p.bucket}/${encodeR2ObjectKeyForPath(p.key)}`;
+
+  const qp = new Map<string, string>([
+    ['X-Amz-Algorithm', 'AWS4-HMAC-SHA256'],
+    ['X-Amz-Credential', credential],
+    ['X-Amz-Date', amzDate],
+    ['X-Amz-Expires', String(Math.floor(p.expiresInSeconds))],
+    ['X-Amz-SignedHeaders', 'host'],
+    ['partNumber', String(p.partNumber)],
+    ['uploadId', p.uploadId],
+  ]);
+
+  const canonicalQueryString = [...qp.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join('&');
+
+  const canonicalHeaders = `host:${host}\n`;
+  const signedHeaders = 'host';
+  const canonicalRequest = [
+    'PUT',
+    canonicalUri,
+    canonicalQueryString,
+    canonicalHeaders,
+    signedHeaders,
+    'UNSIGNED-PAYLOAD',
+  ].join('\n');
+
+  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+  const hashedCanonicalRequest = await sha256Hex(canonicalRequest);
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, credentialScope, hashedCanonicalRequest].join(
+    '\n',
+  );
+
+  const signingKey = await getSignatureKey(p.secretAccessKey, dateStamp, region, service);
+  const sigBytes = await hmacRaw(signingKey, stringToSign);
+  const signature = [...sigBytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+
+  const finalQs = `${canonicalQueryString}&X-Amz-Signature=${signature}`;
+  return `https://${host}${canonicalUri}?${finalQs}`;
+}

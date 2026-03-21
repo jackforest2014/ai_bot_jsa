@@ -7,8 +7,12 @@ export type FileUploadRow = InferSelectModel<typeof fileUploads>;
 export type NewFileUploadRow = InferInsertModel<typeof fileUploads>;
 
 export type ListFilesFilter = {
-  /** 与 folder_path 前缀匹配（技术方案 GET ?folder=） */
-  folderPrefix?: string;
+  /**
+   * 未传：不按路径过滤。
+   * `''`：仅根目录（`folder_path` 为空串）。
+   * 非空：前缀匹配 `LIKE folder%`（技术方案 GET ?folder=）。
+   */
+  folder?: string;
   semanticType?: string;
 };
 
@@ -20,8 +24,12 @@ export class FileRepository {
     if (filter?.semanticType) {
       conditions.push(eq(fileUploads.semantic_type, filter.semanticType));
     }
-    if (filter?.folderPrefix !== undefined && filter.folderPrefix !== '') {
-      conditions.push(like(fileUploads.folder_path, `${filter.folderPrefix}%`));
+    if (filter?.folder !== undefined) {
+      if (filter.folder === '') {
+        conditions.push(eq(fileUploads.folder_path, ''));
+      } else {
+        conditions.push(like(fileUploads.folder_path, `${filter.folder}%`));
+      }
     }
     const whereClause = conditions.length === 1 ? conditions[0] : and(...conditions);
     return this.db

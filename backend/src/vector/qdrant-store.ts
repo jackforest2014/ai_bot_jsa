@@ -11,6 +11,7 @@ export type QdrantStoreOptions = {
 
 type QdrantScoredPoint = {
   id: string | number;
+  score?: number;
   payload?: Record<string, unknown>;
   vector?: number[] | Record<string, number[]>;
 };
@@ -153,6 +154,7 @@ function normalizeHit(hit: QdrantScoredPoint): VectorPoint {
     id,
     vector: vec,
     payload: (hit.payload ?? {}) as VectorPoint['payload'],
+    score: hit.score,
   };
 }
 
