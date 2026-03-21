@@ -38,7 +38,15 @@ export interface LLMProvider {
     messages: LLMMessage[],
     tools?: ToolDefinition[],
   ): Promise<LLMResponse & { usage: TokenUsage }>;
-  /** UTF-8 字节流，按模型返回顺序推送增量文本（不含 SSE 包装） */
+  /**
+   * Gemini `streamGenerateContent`：边收边回调文本增量；流结束后返回完整 content / tool_calls / usage。
+   */
+  chatStream(
+    messages: LLMMessage[],
+    tools: ToolDefinition[] | undefined,
+    onTextDelta: (chunk: string) => void,
+  ): Promise<LLMResponse & { usage: TokenUsage }>;
+  /** UTF-8 字节流，按模型返回顺序推送增量文本（不含 SSE 包装）；内部委托 `chatStream` */
   streamChat(
     messages: LLMMessage[],
     tools?: ToolDefinition[],

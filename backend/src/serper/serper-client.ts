@@ -1,3 +1,4 @@
+import { workerFetch } from '../lib/worker-fetch';
 import type { SerperSearchType } from './types';
 
 const SERPER_BASE = 'https://google.serper.dev';
@@ -37,7 +38,7 @@ export async function serperRequest(
   const base = (options.baseUrl ?? SERPER_BASE).replace(/\/$/, '');
   const path = TYPE_TO_PATH[type];
   const url = `${base}/${path}`;
-  const fetchFn = options.fetchImpl ?? fetch;
+  const fetchFn = options.fetchImpl ?? workerFetch;
   const body: Record<string, unknown> = { q: query };
   if (num !== undefined && Number.isFinite(num) && num > 0) {
     body.num = Math.min(100, Math.floor(num));

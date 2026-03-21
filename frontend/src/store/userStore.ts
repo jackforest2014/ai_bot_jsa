@@ -26,12 +26,27 @@ function parseUserFromStorage(raw: string | null): User | null {
   }
 }
 
+/**
+ * 旧版「模拟登录」使用 dev-token / dev-user，后端 D1 中不存在，会导致大量 401。
+ * Bearer 与 `users.id` 一致时，缓存的 user.id 也应与 token 一致，否则等 `/api/user` 拉齐前勿发业务 API。
+ */
 function loadInitial(): Pick<
   UserStore,
   'user' | 'token' | 'aiNickname' | 'profileHydrated' | 'profileLoading'
 > {
-  const token = localStorage.getItem(TOKEN_STORAGE_KEY)?.trim() || null
-  const user = parseUserFromStorage(localStorage.getItem(USER_STORAGE_KEY))
+  let token = localStorage.getItem(TOKEN_STORAGE_KEY)?.trim() || null
+  let user = parseUserFromStorage(localStorage.getItem(USER_STORAGE_KEY))
+
+  if (token === 'dev-token' || user?.id === 'dev-user') {
+    token = null
+    user = null
+    localStorage.removeItem(TOKEN_STORAGE_KEY)
+    localStorage.removeItem(USER_STORAGE_KEY)
+  } else if (token && user && user.id !== token) {
+    user = null
+    localStorage.removeItem(USER_STORAGE_KEY)
+  }
+
   return {
     user,
     token,

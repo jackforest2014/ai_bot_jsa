@@ -20,10 +20,12 @@ migrations_dir = "migrations"
 # 非敏感默认可通过 vars；密钥请用 `wrangler secret put KEY` 或本地 .dev.vars
 # 预签名下载 URL（可选）：填 R2_ACCOUNT_ID + 下面 bucket 名 + S3 API 令牌（见 README）
 [vars]
-LLM_PROVIDER = "gemini"
-LLM_MODEL = "gemini-2.0-flash-lite"
-# Gemini embedContent 模型 id，须与 EMBEDDING_DIMENSIONS、Qdrant collection 一致
-EMBEDDING_MODEL = "text-embedding-004"
+# 大模型提供方：gemini（GEMINI_API_KEY）| qwen（DASHSCOPE_API_KEY，百炼 OpenAI 兼容）
+LLM_PROVIDER = "qwen"
+# 对话模型：Gemini 示例 gemini-2.0-flash-lite；千问示例 qwen-plus / qwen-turbo（以百炼模型列表为准）
+LLM_MODEL = "qwen-plus"
+# 向量模型：须与 EMBEDDING_DIMENSIONS、Qdrant collection 一致（千问常用 text-embedding-v3 + dimensions）
+EMBEDDING_MODEL = "text-embedding-v3"
 # Serper：密钥用 .dev.vars / secret；软上限为「成功搜索」计数/用户/UTC 日
 SERPER_DAILY_SOFT_LIMIT = "80"
 R2_BUCKET_NAME = "task-assistant-files"

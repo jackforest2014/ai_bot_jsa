@@ -1,3 +1,4 @@
+import { workerFetch } from '../lib/worker-fetch';
 import type { VectorPoint, VectorStore } from './vector-store';
 
 export type QdrantStoreOptions = {
@@ -26,7 +27,7 @@ export class QdrantStore implements VectorStore {
 
   constructor(private readonly opts: QdrantStoreOptions) {
     this.root = opts.baseUrl.replace(/\/$/, '');
-    this.fetchFn = opts.fetchImpl ?? fetch;
+    this.fetchFn = opts.fetchImpl ?? workerFetch;
   }
 
   private headers(): Headers {

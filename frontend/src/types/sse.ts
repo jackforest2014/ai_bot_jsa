@@ -6,6 +6,7 @@ export type SseEventName =
   | 'tool_result_meta'
   | 'citation'
   | 'intention'
+  | 'status'
   | 'done'
   | string
 

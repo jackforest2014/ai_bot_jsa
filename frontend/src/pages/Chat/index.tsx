@@ -15,12 +15,16 @@ export default function ChatPage() {
   const profileHydrated = useUserStore((s) => s.profileHydrated)
   const profileLoading = useUserStore((s) => s.profileLoading)
 
-  const { messages, send, retryAfterUserMessage, stop, streaming, error } = useChatStream()
+  const { messages, send, retryAfterUserMessage, stop, streaming, error, streamStatusHint } =
+    useChatStream()
   const [draft, setDraft] = useState('')
 
   const showSyncing = Boolean(token && !profileHydrated && profileLoading)
   const showUserError = Boolean(token && profileHydrated && !user)
-  const inputDisabled = Boolean(!token || !user || showSyncing || showUserError)
+  // 须等 AppShell 完成 GET /api/user；勿用 localStorage 里残留 user 提前打开任务侧栏（会带无效 Bearer 刷 401）
+  const inputDisabled = Boolean(
+    !token || !user || !profileHydrated || showSyncing || showUserError,
+  )
 
   return (
     <div className="space-y-4">
@@ -70,6 +74,12 @@ export default function ChatPage() {
               }
             />
           </div>
+
+          {streamStatusHint ? (
+            <p className="text-sm text-slate-600" aria-live="polite">
+              {streamStatusHint}
+            </p>
+          ) : null}
 
           <ChatInput
             value={draft}

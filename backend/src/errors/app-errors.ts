@@ -41,10 +41,18 @@ export class DatabaseError extends AppError {
 }
 
 export class LLMError extends AppError {
-  constructor(message: string, options?: { details?: unknown; cause?: unknown }) {
+  constructor(
+    message: string,
+    options?: {
+      details?: unknown;
+      cause?: unknown;
+      code?: string;
+      statusCode?: number;
+    },
+  ) {
     super(message, {
-      code: 'LLM_ERROR',
-      statusCode: 502,
+      code: options?.code ?? 'LLM_ERROR',
+      statusCode: options?.statusCode ?? 502,
       details: options?.details,
       cause: options?.cause,
     });

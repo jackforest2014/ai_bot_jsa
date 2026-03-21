@@ -1,4 +1,5 @@
 import { LLMError } from '../errors/app-errors';
+import { workerFetch } from '../lib/worker-fetch';
 import {
   splitSystemAndRest,
   toGeminiContents,
@@ -7,6 +8,24 @@ import {
 import type { LLMMessage, LLMProvider, LLMResponse, TokenUsage, ToolCall, ToolDefinition } from './types';
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+
+/** 非流式 generateContent 整段等待上限 */
+const GEMINI_CHAT_TIMEOUT_MS = 90_000;
+/** embedContent 等待上限（RAG 第一步） */
+const GEMINI_EMBED_TIMEOUT_MS = 60_000;
+/** 流式：从发起请求到读完响应体的总墙钟上限（含首包与尾包） */
+const GEMINI_STREAM_WALL_MS = 180_000;
+
+function deadlineSignal(ms: number): AbortSignal | undefined {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(ms);
+  }
+  return undefined;
+}
+
+function isAbortError(e: unknown): boolean {
+  return e instanceof Error && e.name === 'AbortError';
+}
 
 export type GeminiProviderOptions = {
   apiKey: string;
@@ -23,7 +42,7 @@ export class GeminiProvider implements LLMProvider {
   private readonly fetchFn: typeof fetch;
 
   constructor(private readonly opts: GeminiProviderOptions) {
-    this.fetchFn = opts.fetchImpl ?? fetch;
+    this.fetchFn = opts.fetchImpl ?? workerFetch;
   }
 
   async chat(
@@ -32,11 +51,25 @@ export class GeminiProvider implements LLMProvider {
   ): Promise<LLMResponse & { usage: TokenUsage }> {
     const body = this.buildGenerateBody(messages, tools);
     const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(this.opts.chatModel)}:generateContent?key=${encodeURIComponent(this.opts.apiKey)}`;
-    const res = await this.fetchFn(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const signal = deadlineSignal(GEMINI_CHAT_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await this.fetchFn(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        ...(signal ? { signal } : {}),
+      });
+    } catch (e) {
+      if (isAbortError(e)) {
+        throw new LLMError('Gemini generateContent 超时，请检查网络或对 Google API 的访问', {
+          code: 'LLM_TIMEOUT',
+          statusCode: 504,
+          cause: e,
+        });
+      }
+      throw e;
+    }
     const raw = await res.text();
     if (!res.ok) {
       throw new LLMError(`Gemini generateContent failed: ${res.status}`, {
@@ -55,58 +88,117 @@ export class GeminiProvider implements LLMProvider {
     return { content, tool_calls, usage };
   }
 
-  streamChat(messages: LLMMessage[], tools?: ToolDefinition[]): ReadableStream<Uint8Array> {
+  async chatStream(
+    messages: LLMMessage[],
+    tools: ToolDefinition[] | undefined,
+    onTextDelta: (chunk: string) => void,
+  ): Promise<LLMResponse & { usage: TokenUsage }> {
     const body = this.buildGenerateBody(messages, tools);
     const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(this.opts.chatModel)}:streamGenerateContent?key=${encodeURIComponent(this.opts.apiKey)}&alt=sse`;
-    const fetchFn = this.fetchFn;
-    const encoder = new TextEncoder();
+    const signal = deadlineSignal(GEMINI_STREAM_WALL_MS);
+    let res: Response;
+    try {
+      res = await this.fetchFn(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        ...(signal ? { signal } : {}),
+      });
+    } catch (e) {
+      if (isAbortError(e)) {
+        throw new LLMError('Gemini 流式请求超时（含首包或读流），请检查网络、代理或对 generativelanguage.googleapis.com 的访问', {
+          code: 'LLM_TIMEOUT',
+          statusCode: 504,
+          cause: e,
+        });
+      }
+      throw e;
+    }
+    if (!res.ok) {
+      const t = await res.text();
+      throw new LLMError(`Gemini streamGenerateContent failed: ${res.status}`, {
+        details: { body: t.slice(0, 2000) },
+      });
+    }
+    if (!res.body) {
+      throw new LLMError('Gemini stream: empty body');
+    }
 
-    return new ReadableStream<Uint8Array>({
-      async start(controller) {
+    let usage: TokenUsage = {
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+    };
+    let lastToolCalls: ToolCall[] | undefined;
+    let fullText = '';
+
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buffer = '';
+    try {
+      for (;;) {
+        let readResult: ReadableStreamReadResult<Uint8Array>;
         try {
-          const res = await fetchFn(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
+          readResult = await reader.read();
+        } catch (e) {
+          if (isAbortError(e)) {
+            throw new LLMError('Gemini 流式读超时或连接中断', {
+              code: 'LLM_TIMEOUT',
+              statusCode: 504,
+              cause: e,
+            });
+          }
+          throw e;
+        }
+        const { done, value } = readResult;
+        if (done) break;
+        buffer += dec.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const payload = trimmed.slice(5).trim();
+          if (payload === '[DONE]') continue;
+          let json: unknown;
+          try {
+            json = JSON.parse(payload) as unknown;
+          } catch {
+            continue;
+          }
+          this.throwIfBlocked(json);
+          if (hasUsageMetadata(json)) {
+            usage = parseUsageMetadata(json);
+          }
+          const { content: piece, tool_calls: tc } = parseCandidateContent(json);
+          if (piece) {
+            fullText += piece;
+            onTextDelta(piece);
+          }
+          if (tc?.length) {
+            lastToolCalls = tc;
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return {
+      content: fullText,
+      tool_calls: lastToolCalls,
+      usage,
+    };
+  }
+
+  streamChat(messages: LLMMessage[], tools?: ToolDefinition[]): ReadableStream<Uint8Array> {
+    const encoder = new TextEncoder();
+    return new ReadableStream<Uint8Array>({
+      start: async (controller) => {
+        try {
+          await this.chatStream(messages, tools, (d) => {
+            controller.enqueue(encoder.encode(d));
           });
-          if (!res.ok) {
-            const t = await res.text();
-            controller.error(
-              new LLMError(`Gemini streamGenerateContent failed: ${res.status}`, {
-                details: { body: t.slice(0, 2000) },
-              }),
-            );
-            return;
-          }
-          if (!res.body) {
-            controller.error(new LLMError('Gemini stream: empty body'));
-            return;
-          }
-          const reader = res.body.getReader();
-          const dec = new TextDecoder();
-          let buffer = '';
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += dec.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() ?? '';
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed.startsWith('data:')) continue;
-              const payload = trimmed.slice(5).trim();
-              if (payload === '[DONE]') continue;
-              try {
-                const json = JSON.parse(payload) as unknown;
-                const chunk = extractStreamText(json);
-                if (chunk) {
-                  controller.enqueue(encoder.encode(chunk));
-                }
-              } catch {
-                // 忽略无法解析的行
-              }
-            }
-          }
           controller.close();
         } catch (e) {
           controller.error(e instanceof Error ? e : new Error(String(e)));
@@ -121,13 +213,27 @@ export class GeminiProvider implements LLMProvider {
       throw new LLMError('embed: empty text');
     }
     const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(this.opts.embeddingModel)}:embedContent?key=${encodeURIComponent(this.opts.apiKey)}`;
-    const res = await this.fetchFn(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        content: { parts: [{ text: trimmed }] },
-      }),
-    });
+    const signal = deadlineSignal(GEMINI_EMBED_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await this.fetchFn(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: { parts: [{ text: trimmed }] },
+        }),
+        ...(signal ? { signal } : {}),
+      });
+    } catch (e) {
+      if (isAbortError(e)) {
+        throw new LLMError('Gemini embedContent 超时（记忆检索会变慢或触发 RAG 超时）', {
+          code: 'LLM_TIMEOUT',
+          statusCode: 504,
+          cause: e,
+        });
+      }
+      throw e;
+    }
     const raw = await res.text();
     if (!res.ok) {
       throw new LLMError(`Gemini embedContent failed: ${res.status}`, {
@@ -225,17 +331,10 @@ function parseCandidateContent(data: unknown): Pick<LLMResponse, 'content' | 'to
   };
 }
 
-function extractStreamText(chunk: unknown): string {
-  const parts = (chunk as { candidates?: { content?: { parts?: unknown[] } }[] })?.candidates?.[0]
-    ?.content?.parts;
-  if (!Array.isArray(parts)) return '';
-  const out: string[] = [];
-  for (const p of parts) {
-    if (p && typeof p === 'object' && typeof (p as { text?: string }).text === 'string') {
-      out.push((p as { text: string }).text);
-    }
-  }
-  return out.join('');
+function hasUsageMetadata(data: unknown): boolean {
+  if (typeof data !== 'object' || data === null) return false;
+  const u = (data as { usageMetadata?: unknown }).usageMetadata;
+  return u !== undefined && u !== null && typeof u === 'object';
 }
 
 /** Worker / wrangler 环境 */

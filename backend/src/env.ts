@@ -1,6 +1,7 @@
 import type { FileStorageEnv } from './storage';
 import type { QdrantEnv } from './vector';
 import type { GeminiEnv } from './llm';
+import type { QwenDashScopeEnv } from './llm/qwen-provider';
 
 export type SerperEnv = {
   SERPER_API_KEY?: string;
@@ -11,6 +12,7 @@ export type SerperEnv = {
 export type Env = FileStorageEnv &
   QdrantEnv &
   GeminiEnv &
+  QwenDashScopeEnv &
   SerperEnv & {
     task_assistant_db: D1Database;
     LLM_PROVIDER: string;

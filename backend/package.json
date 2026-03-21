@@ -12,6 +12,7 @@
     "format:check": "prettier --check .",
     "db:apply:local": "wrangler d1 migrations apply task-assistant-db --local",
     "db:apply:remote": "wrangler d1 migrations apply task-assistant-db --remote",
+    "db:seed:dev-user": "wrangler d1 execute task-assistant-db --local --file=./scripts/seed-local-dev-user.sql",
     "qdrant:ensure-collection": "node scripts/ensure-qdrant-collection.mjs"
   },
   "dependencies": {

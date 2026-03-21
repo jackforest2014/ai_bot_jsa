@@ -10,7 +10,26 @@ import { logger } from '../lib/logger';
 
 const MAX_REACT_ITERATIONS = 10;
 const SHORT_TERM_MESSAGE_CAP = 20;
-const TOKEN_CHUNK = 32;
+/** RAG = Gemini embed（最长见 gemini-provider GEMINI_EMBED_TIMEOUT_MS）+ Qdrant search；须大于 embed 超时留出检索余量 */
+const MEMORY_RAG_TIMEOUT_MS = 75_000;
+
+function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => {
+      reject(new Error(`${label}:timeout:${ms}ms`));
+    }, ms);
+    promise.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e instanceof Error ? e : new Error(String(e)));
+      },
+    );
+  });
+}
 
 export type ChatStreamParams = {
   user: UserRow;
@@ -32,23 +51,39 @@ export class ChatService {
   ) {}
 
   /**
-   * 返回 UTF-8 字节流：SSE 事件序列（token / tool_call / tool_result_meta / citation / intention / done）。
+   * 返回 UTF-8 字节流：SSE 事件序列（status / token 随 Gemini 流式增量 / tool_call / citation / intention / done）。
    */
   handleMessageStream(params: ChatStreamParams): ReadableStream<Uint8Array> {
     const { user, userInput } = params;
     const encoder = new TextEncoder();
 
     return new ReadableStream({
-      start: async (controller) => {
+      start: (controller) => {
         const send = (event: string, payload: unknown) => {
           controller.enqueue(encoder.encode(encodeSseEvent(event, payload)));
         };
 
+        const t0 = Date.now();
+        const dbg = (msg: string, meta?: Record<string, unknown>) => {
+          logger.debug('chat stream', {
+            msg,
+            ms: Date.now() - t0,
+            userId: user.id,
+            ...meta,
+          });
+        };
+
+        send('status', { phase: 'connected' });
+        dbg('sse_open');
+
+        void (async () => {
         try {
           const intention = await this.intentClassifier.classify(userInput);
+          dbg('intent_done', { intention });
           send('intention', { intention });
 
           const template = await this.promptService.selectTemplate(intention);
+          dbg('template_selected', { templateId: template.id, templateName: template.name });
           const tools = this.toolRegistry.getDefinitions();
           const systemPrompt = this.promptService.render(template.template_text, {
             userName: user.name,
@@ -57,10 +92,34 @@ export class ChatService {
             tools,
             preferencesJson: user.preferences_json,
           });
+          dbg('system_prompt_built', { toolCount: tools.length, systemChars: systemPrompt.length });
 
           let ragBlock = '';
           if (this.memoryService) {
-            const mem = await this.memoryService.retrieveForRag(userInput, user.id);
+            send('status', { phase: 'memory_retrieving' });
+            dbg('rag_start');
+            type RagResult = Awaited<ReturnType<MemoryService['retrieveForRag']>>;
+            let mem: RagResult = { citations: [], ragContextBlock: '' };
+            try {
+              mem = await raceWithTimeout(
+                this.memoryService.retrieveForRag(userInput, user.id),
+                MEMORY_RAG_TIMEOUT_MS,
+                'memory_rag',
+              );
+              dbg('rag_done', {
+                citationCount: mem.citations.length,
+                ragChars: mem.ragContextBlock.length,
+              });
+            } catch (e) {
+              const err = e instanceof Error ? e.message : String(e);
+              logger.warn('chat stream: memory RAG failed or timed out (continuing without RAG)', {
+                userId: user.id,
+                error: err,
+                hint: '检查 QDRANT；嵌入走当前 LLM（Qwen: DASHSCOPE_API_KEY + 地域 BASE_URL；Gemini: GEMINI_API_KEY）',
+              });
+              dbg('rag_failed', { error: err });
+              send('status', { phase: 'memory_skipped', reason: err });
+            }
             for (const c of mem.citations) {
               send('citation', {
                 kind: c.kind,
@@ -72,12 +131,15 @@ export class ChatService {
               });
             }
             ragBlock = mem.ragContextBlock;
+          } else {
+            dbg('rag_skip', { reason: 'memory_service_null' });
           }
 
           const historyRows = await this.conversationRepo.listRecentForUser(
             user.id,
             SHORT_TERM_MESSAGE_CAP,
           );
+          dbg('history_loaded', { rows: historyRows.length });
           const historyMessages: LLMMessage[] = [];
           for (const row of historyRows) {
             if (row.role !== 'user' && row.role !== 'assistant') continue;
@@ -100,7 +162,22 @@ export class ChatService {
           let stalledOnTools = false;
 
           for (let round = 0; round < MAX_REACT_ITERATIONS; round++) {
-            const response = await this.llm.chat(messages, defs);
+            send('status', { phase: 'model_generating' });
+            dbg('llm_stream_request', {
+              round,
+              messageCount: messages.length,
+              hasTools: !!defs?.length,
+            });
+            const llmT = Date.now();
+            const response = await this.llm.chatStream(messages, defs, (delta) => {
+              if (delta) send('token', { content: delta });
+            });
+            dbg('llm_stream_done', {
+              round,
+              llmMs: Date.now() - llmT,
+              textChars: (response.content ?? '').length,
+              toolCallCount: response.tool_calls?.length ?? 0,
+            });
 
             if (!response.tool_calls?.length) {
               finalText = response.content ?? '';
@@ -120,6 +197,7 @@ export class ChatService {
               send('tool_call', { name: tc.name, args });
             }
 
+            send('status', { phase: 'tools_running' });
             const executed = await this.toolRegistry.executeAll(response.tool_calls, {
               userId: user.id,
             });
@@ -152,10 +230,7 @@ export class ChatService {
 
           if (stalledOnTools && !finalText) {
             finalText = '（已达到工具调用次数上限，请简化问题后重试。）';
-          }
-
-          for (let i = 0; i < finalText.length; i += TOKEN_CHUNK) {
-            send('token', { content: finalText.slice(i, i + TOKEN_CHUNK) });
+            send('token', { content: finalText });
           }
 
           const keywords = extractKeywords(userInput);
@@ -188,10 +263,13 @@ export class ChatService {
             created_at: now,
           });
 
+          dbg('persist_done', { totalMs: Date.now() - t0 });
           send('done', {});
         } catch (e) {
           logger.error('chat stream failed', {
             error: e instanceof Error ? e.message : String(e),
+            userId: user.id,
+            ms: Date.now() - t0,
           });
           const msg =
             e instanceof Error ? e.message : '对话处理失败';
@@ -200,6 +278,7 @@ export class ChatService {
         } finally {
           controller.close();
         }
+        })();
       },
     });
   }

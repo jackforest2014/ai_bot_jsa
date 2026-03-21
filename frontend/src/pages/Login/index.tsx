@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 
+import { ApiError } from '@/api/client'
 import { userAPI } from '@/api/user'
 import { userFromApi } from '@/lib/user-from-api'
 import { useUserStore } from '@/store/userStore'
@@ -62,18 +63,37 @@ export default function LoginPage() {
     }
   }
 
-  function handleDevLogin() {
-    useUserStore.getState().setToken('dev-token')
-    useUserStore.getState().setUser({
-      id: 'dev-user',
-      name: '',
-      email: '',
-      ai_nickname: '助手',
-      preferences: {},
-    })
-    useUserStore.setState({ profileHydrated: true, profileLoading: false })
-    toast.success('已使用开发占位用户（资料未全量）')
-    navigate(afterLoginPath, { replace: true })
+  const DEV_LOCAL_USER_ID = 'local-dev-user'
+
+  async function handleDevLogin() {
+    setSubmitting(true)
+    try {
+      useUserStore.getState().setToken(DEV_LOCAL_USER_ID)
+      const raw = await userAPI.getUser()
+      useUserStore.getState().setUser(userFromApi(raw))
+      toast.success('已用本地开发用户登录（须已在 D1 执行 seed）')
+      navigate(afterLoginPath, { replace: true })
+    } catch (e) {
+      useUserStore.getState().clearUser()
+      if (e instanceof TypeError || (e instanceof Error && e.message === 'Failed to fetch')) {
+        toast.error(
+          '无法连接后端。请确认 backend 已 `npm run dev`；本地开发建议 frontend/.env 里 VITE_API_BASE 留空（走 Vite 代理）。若填写了 http://127.0.0.1:8787，需使用已含 CORS 的后端（请重启 wrangler）。',
+          { duration: 10000 },
+        )
+      } else if (e instanceof ApiError && e.status === 401) {
+        toast.error(
+          `后端返回 401。seed 已做过仍如此时，多半是请求没打到「你执行 seed 的那份」本地 D1：保持 VITE_API_BASE 为空，或核对 URL/端口。自检：backend 目录执行 curl -H "Authorization: Bearer ${DEV_LOCAL_USER_ID}" http://127.0.0.1:8787/api/user 应得到 JSON。仅远程 Worker 需在远程 D1 再 seed。`,
+          { duration: 12000 },
+        )
+      } else {
+        toast.error(
+          `一键登录失败。仍可尝试在 backend 执行 npm run db:seed:dev-user 后重试（令牌 ${DEV_LOCAL_USER_ID}）。`,
+          { duration: 8000 },
+        )
+      }
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -118,11 +138,16 @@ export default function LoginPage() {
 
       <button
         type="button"
-        onClick={handleDevLogin}
-        className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-50"
+        onClick={() => void handleDevLogin()}
+        disabled={submitting}
+        className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-60"
       >
-        模拟登录（开发 · 空资料态演示）
+        {submitting ? '验证中…' : '本地开发一键登录（local-dev-user）'}
       </button>
+      <p className="mt-2 text-xs text-slate-500">
+        首次使用请在 <code className="rounded bg-slate-100 px-1">backend/</code> 运行{' '}
+        <code className="rounded bg-slate-100 px-1">npm run db:seed:dev-user</code>。
+      </p>
     </div>
   )
 }

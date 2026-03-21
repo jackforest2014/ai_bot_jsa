@@ -12,6 +12,7 @@ import {
 import { createFileStorage, hasR2Binding, hasR2PresignConfig } from './storage';
 import { createQdrantStore, hasQdrantConfig, parseEmbeddingDimensions } from './vector';
 import { handleError } from './lib/handle-error';
+import { logger } from './lib/logger';
 import { requireUserFromBearer } from './auth/resolve-user';
 import { ChatService } from './chat/chat-service';
 import { RuleBasedIntentClassifier } from './intent';
@@ -23,7 +24,7 @@ import { ToolRegistry } from './tools/tool-registry';
 import { registerTaskTools } from './tools/task-tools';
 import { createUpdateUserProfileTool } from './tools/user-tool';
 import { createWorkspaceFilesTool } from './tools/workspace-files-tool';
-import { createGeminiProvider, hasGeminiConfig } from './llm';
+import { createLlmProvider, hasLlmConfigured, resolveLlmProviderKind } from './llm';
 import { createMemoryService, hasMemoryServiceConfig } from './memory';
 import type { Env } from './env';
 import { fileRoutes } from './routes/files';
@@ -34,14 +35,7 @@ export type { Env };
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.route('/api/tasks', taskRoutes);
-app.route('/api/user', userRoutes);
-app.route('/api/files', fileRoutes);
-
-app.onError(handleError);
-
-app.notFound((c) => c.json({ error: 'Not Found', code: 'NOT_FOUND' }, 404));
-
+// 必须在 `app.route('/api/*')` 之前，否则浏览器直连 Worker（如 VITE_API_BASE 指向 :8787）时响应无 CORS 头，fetch 失败并被误判为「库无用户」
 app.use(
   '*',
   cors({
@@ -50,6 +44,14 @@ app.use(
     allowHeaders: ['Content-Type', 'Authorization'],
   }),
 );
+
+app.route('/api/tasks', taskRoutes);
+app.route('/api/user', userRoutes);
+app.route('/api/files', fileRoutes);
+
+app.onError(handleError);
+
+app.notFound((c) => c.json({ error: 'Not Found', code: 'NOT_FOUND' }, 404));
 
 app.get('/', (c) =>
   c.json({
@@ -66,15 +68,22 @@ app.get('/health', (c) =>
   }),
 );
 
-/** Gemini API Key 是否已配置（不发起外部请求） */
-app.get('/health/llm', (c) =>
-  c.json({
-    configured: hasGeminiConfig(c.env),
+/** LLM 密钥是否已配置（不发起外部请求） */
+app.get('/health/llm', (c) => {
+  const kind = resolveLlmProviderKind(c.env);
+  return c.json({
+    configured: hasLlmConfigured(c.env),
+    provider: kind,
     chat_model: c.env.LLM_MODEL,
-    embedding_model: c.env.EMBEDDING_MODEL ?? 'text-embedding-004',
-    note: '密钥：GEMINI_API_KEY（.dev.vars / wrangler secret）',
-  }),
-);
+    embedding_model:
+      c.env.EMBEDDING_MODEL?.trim() ||
+      (kind === 'qwen' ? 'text-embedding-v3' : 'text-embedding-004'),
+    note:
+      kind === 'qwen'
+        ? 'LLM_PROVIDER=qwen：DASHSCOPE_API_KEY；可选 DASHSCOPE_BASE_URL（国际站见 README）'
+        : 'LLM_PROVIDER=gemini：GEMINI_API_KEY（.dev.vars / wrangler secret）',
+  });
+});
 
 app.get('/health/serper', (c) => {
   const key = c.env.SERPER_API_KEY?.trim();
@@ -88,7 +97,7 @@ app.get('/health/serper', (c) => {
 app.get('/health/memory', (c) =>
   c.json({
     configured: hasMemoryServiceConfig(c.env),
-    note: '需 Qdrant + GEMINI_API_KEY；业务侧使用 createMemoryService(c.env)',
+    note: '需 Qdrant + 当前 LLM 提供方密钥（Gemini: GEMINI_API_KEY / Qwen: DASHSCOPE_API_KEY）',
   }),
 );
 
@@ -189,13 +198,13 @@ app.get('/health/db', async (c) => {
  * 对话流式（SSE）：任务 2.6 / 技术方案 §5.1
  */
 app.post('/api/chat/stream', async (c) => {
-  if (!hasGeminiConfig(c.env)) {
+  if (!hasLlmConfigured(c.env)) {
     return c.json(
       { error: 'LLM 未配置', code: 'LLM_NOT_CONFIGURED' },
       503,
     );
   }
-  const llm = createGeminiProvider(c.env);
+  const llm = createLlmProvider(c.env);
   if (!llm) {
     return c.json({ error: 'LLM 未配置', code: 'LLM_NOT_CONFIGURED' }, 503);
   }
@@ -252,13 +261,18 @@ app.post('/api/chat/stream', async (c) => {
     memoryService,
   );
 
+  logger.info('chat stream: accepted', {
+    userId: user.id,
+    messageChars: message.length,
+    memory: !!memoryService,
+  });
+
   const stream = chatService.handleMessageStream({ user, userInput: message });
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    },
+  // 经 Context 写出，便于与前置 CORS 中间件写在 c.res 上的头合并（见 hono Context#res setter）
+  return c.body(stream, 200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
   });
 });
 

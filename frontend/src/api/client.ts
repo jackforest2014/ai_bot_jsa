@@ -73,7 +73,10 @@ export async function request<T>(endpoint: string, options?: RequestInit): Promi
   }
 
   if (response.status === 401) {
-    redirectToLogin()
+    // 登录页正在校验令牌时不应清 token 并整页跳转，否则与表单自身的 clearUser 冲突且难以排查
+    if (window.location.pathname !== '/login') {
+      redirectToLogin()
+    }
     throw new ApiError('未授权，请重新登录', 401)
   }
 

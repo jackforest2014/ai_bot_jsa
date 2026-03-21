@@ -36,6 +36,22 @@ function extractTokenChunk(data: unknown): string {
   return ''
 }
 
+/** 与后端 `event: status` 的 `phase` 对齐 */
+function statusPhaseToHint(phase: string): string | null {
+  switch (phase) {
+    case 'memory_retrieving':
+      return '检索记忆中…'
+    case 'memory_skipped':
+      return '记忆检索超时或失败，已跳过并继续回复…'
+    case 'model_generating':
+      return '模型生成中…'
+    case 'tools_running':
+      return '正在执行工具…'
+    default:
+      return null
+  }
+}
+
 export interface UseChatStreamResult {
   messages: ChatMessage[]
   send: (text: string) => Promise<void>
@@ -44,6 +60,8 @@ export interface UseChatStreamResult {
   stop: () => void
   streaming: boolean
   error: string | null
+  /** 流式阶段提示（输入框上方展示）；无提示时为 null */
+  streamStatusHint: string | null
 }
 
 /**
@@ -54,6 +72,7 @@ export function useChatStream(): UseChatStreamResult {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [streamStatusHint, setStreamStatusHint] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const assistantIdRef = useRef<string | null>(null)
   const conversationIdRef = useRef<string | undefined>(undefined)
@@ -87,6 +106,17 @@ export function useChatStream(): UseChatStreamResult {
       if (ev.event === 'intention') {
         const intent = parseIntentionPayload(ev.data)
         if (intent) setChatStatus(intentionToChatStatus(intent))
+        return
+      }
+
+      if (ev.event === 'status') {
+        const raw = ev.data
+        const phase =
+          raw && typeof raw === 'object' && raw !== null && 'phase' in raw
+            ? String((raw as { phase: unknown }).phase)
+            : ''
+        const hint = phase ? statusPhaseToHint(phase) : null
+        setStreamStatusHint(hint)
         return
       }
 
@@ -138,6 +168,7 @@ export function useChatStream(): UseChatStreamResult {
 
       if (ev.event === 'done') {
         setChatStatus('idle')
+        setStreamStatusHint(null)
       }
     },
     [setChatStatus, updateAssistantMeta],
@@ -174,6 +205,7 @@ export function useChatStream(): UseChatStreamResult {
         assistantIdRef.current = null
         setStreaming(false)
         setChatStatus('idle')
+        setStreamStatusHint(null)
       }
     },
     [dispatchEvent, setChatStatus],
@@ -204,6 +236,7 @@ export function useChatStream(): UseChatStreamResult {
       }
 
       setError(null)
+      setStreamStatusHint(null)
       setMessages((prev) => [...prev, userMsg, assistantMsg])
       setStreaming(true)
       await runAssistantStream(trimmed, assistantId, ac)
@@ -236,6 +269,7 @@ export function useChatStream(): UseChatStreamResult {
       abortRef.current = ac
 
       setError(null)
+      setStreamStatusHint(null)
       setMessages([...prev.slice(0, i + 1), freshAssistant, ...prev.slice(i + 2)])
       setStreaming(true)
       await runAssistantStream(userText, newAssistantId, ac)
@@ -243,5 +277,5 @@ export function useChatStream(): UseChatStreamResult {
     [streaming, runAssistantStream],
   )
 
-  return { messages, send, retryAfterUserMessage, stop, streaming, error }
+  return { messages, send, retryAfterUserMessage, stop, streaming, error, streamStatusHint }
 }
