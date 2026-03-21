@@ -7,10 +7,12 @@
 | 1.1 | 2026-03-21 | AI Assistant | 新增个人工作空间与文件管理模块（上传、RAG、前端交互） |
 | 1.2 | 2026-03-21 | AI Assistant | 完善文件上传进度反馈；增加场景化 Prompt 模板与意图识别；扩展 conversations 表结构 |
 | 1.3 | 2026-03-21 | AI Assistant | 对照 PRD v1.1 修订：去重章节、补齐 FileTool/SSE 引用块、文件夹与标签字段、任务 detail、用户偏好、Serper 配额、搜索类型与文件处理策略说明；标明 TOT/GOT 与 projects 为 PRD 外可选扩展 |
+| 1.4 | 2026-03-21 | AI Assistant | 对齐 [PRD v1.2](../products/ai_bot_v1_1.md)：`chat_sessions` 多会话、`messages.session_id`、匿名昵称登录与可选邮箱、会话历史 API、首轮资料缺口 Prompt、流式结束后自动标题、认证接口 |
 
-### 与 PRD v1.1 的范围说明
+### 与 PRD v1.1 / v1.2 的范围说明
 
 - **必选对齐**：对话式任务与文件管理、Serper 搜索与降级、RAG、工作空间上传与进度、64MB 限制、数据隔离等均按 PRD 设计。
+- **PRD v1.2 增补（本版后端须实现或已规划）**：**多会话（线程）** 与按会话拉取消息；**退出再登录** 历史不丢；**匿名登录**（显示名称全库唯一、邮箱可空）；**首轮助手回复** 在资料缺失时并列询问姓名/邮箱；**会话自动标题** 与 **PATCH 重命名**。
 - **PRD 未要求但本方案保留的扩展**：`projects` 任务分组、**TOT/GOT** 高级推理工具——实现阶段可作为**可选模块**开关，不纳入 PRD v1.1 验收范围。
 - **向量维度**：下文示例维度与所用 **Gemini Embedding 模型官方文档**一致为准，集成前须在代码与环境变量中核对实际维度。
 
@@ -30,8 +32,10 @@
   - [4.3 时间字段设计说明](#43-时间字段设计说明)
   - [4.4 数据库迁移脚本（D1）](#44-数据库迁移脚本d1)
   - [4.5 上传文件类型与 RAG 处理策略](#45-上传文件类型与-rag-处理策略)
-- [5. API 接口设计](#5-api-接口设计)
+  - [5. API 接口设计](#5-api-接口设计)
+  - [5.0 认证接口（匿名昵称登录）](#50-认证接口匿名昵称登录)
   - [5.1 对话接口（SSE 流式）](#51-对话接口sse-流式)
+  - [5.1.1 会话（线程）与历史消息](#511-会话线程与历史消息)
   - [5.2 用户信息接口](#52-用户信息接口)
   - [5.3 任务接口](#53-任务接口)
   - [5.4 文件管理接口](#54-文件管理接口)
@@ -207,7 +211,9 @@
 | 模块 | 职责 | 关键类/文件 |
 |------|------|-------------|
 | **用户管理模块** | 用户信息、AI昵称的存储与获取 | `UserRepository`, `api/user.ts` |
-| **对话管理模块** | 接收用户消息，调用 LLM，处理工具调用，返回回复；意图识别与 Prompt 选择 | `ChatService`, `api/chat.ts`, `IntentClassifier` |
+| **对话管理模块** | 接收用户消息，调用 LLM，处理工具调用，返回回复；意图识别与 Prompt 选择；**按会话加载历史**、**首轮资料缺口**、**自动标题** | `ChatService`, `api/chat.ts`, `IntentClassifier` |
+| **会话模块** | 会话 CRUD、列表、按会话分页消息、标题更新 | `SessionRepository`, `api/sessions.ts` |
+| **认证模块** | 匿名昵称登录、JWT 签发、名称唯一性校验 | `api/auth.ts`, `AuthService`（或与 `UserRepository` 合并） |
 | **任务管理模块** | 任务 CRUD；可选项目分组（**超出 PRD v1.1，可关闭**） | `TaskRepository`, `ProjectRepository`, `api/tasks.ts` |
 | **记忆召回模块** | 向量检索历史对话、上传文档，注入上下文 | `MemoryService`, `VectorStore` |
 | **工具调用模块** | 注册与执行所有可用工具（含 `manage_workspace_files`） | `ToolRegistry`, `tools/*.ts` |
@@ -237,25 +243,32 @@
 │ prefs_json  │       │ detail_json │       └─────────────┘
 │ created_at  │       │ status      │
 └─────────────┘       │ created_at  │
-                      │ updated_at  │
-                      └─────────────┘
-
+       │               │ updated_at  │
+       │               └─────────────┘
+       │
+       ▼
 ┌─────────────────┐       ┌─────────────────┐
-│  conversations  │       │   file_uploads  │
+│  chat_sessions  │       │  conversations  │  ← 消息行（按 session 隔离）
 ├─────────────────┤       ├─────────────────┤
-│ id (PK)         │       │ id (PK)         │
-│ user_id (FK)    │       │ user_id (FK)    │
-│ role            │       │ filename        │
-│ content         │       │ original_name   │
-│ created_at      │       │ mime_type       │
-│ intention       │       │ size            │
-│ prompt_id (FK)  │       │ r2_key          │
-│ keywords        │       │ semantic_type   │
-│ conversation_id │       │ folder_path     │
-└─────────────────┘       │ tags            │
-                          │ processed       │
-                          │ created_at      │
+│ id (PK)         │◄──────│ session_id (FK) │
+│ user_id (FK)    │       │ id (PK)         │
+│ title           │       │ user_id (FK)    │
+│ created_at      │       │ role            │
+│ updated_at      │       │ content         │
+└─────────────────┘       │ created_at      │
+                          │ intention       │
+                          │ prompt_id (FK)  │
+                          │ keywords        │
+                          │ conversation_id │  ← 助手行关联用户消息 id（行级）
                           └─────────────────┘
+
+┌─────────────────┐
+│   file_uploads  │
+├─────────────────┤
+│ id (PK)         │
+│ user_id (FK)    │
+│ …               │
+└─────────────────┘
 
 ┌─────────────────┐
 │ serper_usage    │
@@ -277,15 +290,27 @@
 
 #### 表结构详细定义
 
-**users**
+**users**（PRD v1.2：匿名昵称登录）
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | TEXT | PRIMARY KEY | UUID |
-| name | TEXT | NOT NULL | 用户姓名 |
-| email | TEXT | UNIQUE NOT NULL | 邮箱 |
+| name | TEXT | NOT NULL, **UNIQUE** | **显示名称／登录名**，全库唯一，与 PRD「匿名登录」一致 |
+| email | TEXT | UNIQUE, **NULL 允许** | 可选；未填时由首轮对话引导补全（见 §8.1、PRD 2.2） |
 | ai_nickname | TEXT | DEFAULT '助手' | AI 昵称 |
 | preferences_json | TEXT | NULL | 用户偏好（JSON），如回复风格、习惯等，供长期记忆与 Prompt 注入 |
 | created_at | INTEGER | NOT NULL | Unix 时间戳 |
+
+> **迁移注意**：若存量库中 `email` 为 `NOT NULL`，需迁移为可空并处理占位数据；`users.name` 须加唯一索引。
+
+**chat_sessions**（会话 / 线程，PRD v1.2）
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | TEXT | PRIMARY KEY | UUID |
+| user_id | TEXT | NOT NULL, FK | 所属用户 |
+| title | TEXT | NOT NULL | 展示标题；新建时可用默认文案（如「新对话」），首轮完成后可被模型改写 |
+| title_source | TEXT | NOT NULL DEFAULT 'auto' | `auto` 系统生成 / `user` 用户右键重命名覆盖 |
+| created_at | INTEGER | NOT NULL | |
+| updated_at | INTEGER | NOT NULL | 列表排序、重命名时更新 |
 
 **projects**
 | 字段 | 类型 | 约束 | 说明 |
@@ -317,24 +342,26 @@
 | scenario | TEXT | NOT NULL | 场景标识（default, interview, research, etc） |
 | created_at | INTEGER | NOT NULL | |
 
-**conversations**
+**conversations**（消息表；表名保留，语义为「聊天消息行」）
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | TEXT | PRIMARY KEY | UUID |
-| user_id | TEXT | NOT NULL, FK | 所属用户 |
+| user_id | TEXT | NOT NULL, FK | 所属用户（冗余便于按用户审计；与 session 一致） |
+| **session_id** | TEXT | NOT NULL, FK | **所属会话**（`chat_sessions.id`），PRD 多会话与历史加载 |
 | role | TEXT | NOT NULL | 'user' 或 'assistant' |
 | content | TEXT | NOT NULL | 消息内容 |
 | intention | TEXT | NULL | AI 判断的用户意图（如 greeting, question, task_operation, etc） |
 | prompt_id | TEXT | NULL, FK | 使用的 prompt 模板 ID（仅 assistant 消息） |
 | keywords | TEXT | NULL | 用户语句中的命名实体识别结果（JSON 数组） |
-| conversation_id | TEXT | NULL | 关联的用户消息 ID（用于将 AI 回复与用户消息配对） |
+| conversation_id | TEXT | NULL | **行级**：助手消息指向配对的**用户消息行** `id` |
 | created_at | INTEGER | NOT NULL | |
 
 说明：
 - `intention` 由 AI 在生成回答时判断并记录，用于后续分析和优化。
 - `prompt_id` 记录本次回答使用了哪个 prompt 模板。
 - `keywords` 存储从用户输入中提取的实体（如姓名、任务名称等），格式为 JSON 字符串。
-- `conversation_id`：对于用户消息，该字段为 NULL；对于 AI 回复，该字段指向对应的用户消息 ID，方便追溯。
+- `conversation_id`：对于用户消息，该字段为 NULL；对于 AI 回复，该字段指向对应的用户消息行的 `id`，方便追溯。
+- **`session_id` 与 API**：流式接口请求体中的 **`session_id`** 即本字段；列表与历史接口均按 `session_id` 过滤。
 
 **file_uploads**
 | 字段 | 类型 | 约束 | 说明 |
@@ -579,6 +606,37 @@ CREATE TABLE IF NOT EXISTS serper_usage (
 
 ---
 
+### 迁移 0008：多会话、匿名用户邮箱可空（PRD v1.2）
+
+**文件**：`0008_chat_sessions_and_messages.sql`
+
+```sql
+-- 会话表
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  title_source TEXT NOT NULL DEFAULT 'auto',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_updated ON chat_sessions(user_id, updated_at DESC);
+
+-- 消息归属会话：新增列（存量数据须回填默认会话后再设 NOT NULL）
+ALTER TABLE conversations ADD COLUMN session_id TEXT REFERENCES chat_sessions(id) ON DELETE CASCADE;
+-- 部署脚本应对每用户插入占位会话并 UPDATE conversations SET session_id = ... WHERE session_id IS NULL;
+
+-- 用户：显示名唯一；邮箱可空（SQLite 允许多个 NULL UNIQUE）
+-- 注意：已存在数据需先处理重复 name、补全 email 再执行下列约束（按环境编写一次性脚本）
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_name_unique ON users(name);
+-- 若原 email 为 NOT NULL，需：ALTER 或重建表使 email 可空（D1/SQLite 用迁移工具生成具体步骤）
+```
+
+> **回填策略（存量）**：为每个 `user_id` 至少创建一个 `chat_sessions` 行，将所有历史 `conversations` 行 `session_id` 指向该默认会话，避免再登录后「历史空白」。新实现应在用户首次发消息前即创建会话并与前端 `session_id` 对齐。
+
+---
+
 ### 执行迁移
 
 在本地或 CI 中，使用以下命令应用迁移：
@@ -615,7 +673,43 @@ wrangler d1 migrations apply task-assistant-db
 
 ## 5. API 接口设计
 
-所有接口返回 JSON，需携带 `Authorization: Bearer <token>`（简化实现可使用 session）。
+除 **§5.0 认证** 外，接口返回 JSON 时需携带 `Authorization: Bearer <token>`（简化实现可使用 session）。
+
+### 5.0 认证接口（匿名昵称登录）
+
+**POST /api/auth/login**
+
+请求体：
+```json
+{
+  "name": "用户在首页输入的显示名称，全库唯一",
+  "email": "可选，可省略或 null"
+}
+```
+
+响应示例：
+```json
+{
+  "token": "jwt...",
+  "user": {
+    "id": "uuid",
+    "name": "显示名称",
+    "email": null,
+    "ai_nickname": "助手"
+  },
+  "is_new_user": true
+}
+```
+
+- **`is_new_user`**：`true` 表示本次请求**新创建**了用户记录，前端主按钮对应 PRD「开始吧」；`false` 表示该名称**已对应存量用户**、本次为再次登录，对应「欢迎回来」。
+- **同名即同账号**：PRD「全库去重」指 **一名称最多绑定一个用户**；`POST /api/auth/login` 在名称已存在时**直接登录该用户**（`is_new_user: false`），**不**因「重名」返回 409。若未来增加「名称占用但未完成 onboarding」等状态机，再单独定义 409。
+- **实现要点**：注册与登录合一；无密码；JWT `sub` = `user.id`。名称即身份，需知悉低门槛场景的冒名风险，后续可加 PIN/设备绑定等增强（非 v1.2 必验收）。
+
+**GET /api/auth/profile-exists?name=**（可选）
+
+响应：`{ "exists": true }` 表示该名称已对应用户（前端可提前切换主按钮为「欢迎回来」）；`{ "exists": false }` 表示首次创建（「开始吧」）。**不签发 token**，仅减少点击前认知摩擦。
+
+---
 
 ### 5.1 对话接口（SSE 流式）
 
@@ -625,9 +719,38 @@ wrangler d1 migrations apply task-assistant-db
 ```json
 {
   "message": "用户输入",
-  "conversation_id": "可选"
+  "session_id": "必填，UUID，对应当前侧边栏选中的会话"
 }
 ```
+
+- 服务端须校验 **`session_id` 属于当前用户**，否则 403/404。
+- 流式处理结束后：若该会话刚完成**首条 user + 首条 assistant** 成对写入，且 `title_source = 'auto'`，则异步调用 **标题生成**（轻量 LLM 或规则摘要用户首句），`UPDATE chat_sessions SET title = ?, updated_at = ?`；若 `title_source = 'user'` 则跳过。
+
+### 5.1.1 会话（线程）与历史消息
+
+**GET /api/sessions** → 当前用户的会话列表（按 `updated_at` 降序）
+
+```json
+[
+  { "id": "uuid", "title": "项目周报要点", "created_at": 1710000000, "updated_at": 1710000100 }
+]
+```
+
+**POST /api/sessions** → 创建空会话（可选；也可由首次发消息时懒创建）
+
+响应：`{ "id": "uuid", "title": "新对话", ... }`
+
+**GET /api/sessions/:sessionId/messages?cursor=&limit=** → 分页拉取该会话消息，**供进入会话或再登录后渲染**；顺序按 `created_at` 升序。
+
+**PATCH /api/sessions/:sessionId** → 重命名
+
+```json
+{ "title": "用户输入的新标题" }
+```
+
+成功后置 `title_source = 'user'`（避免自动标题覆盖用户文案）。
+
+**DELETE /api/sessions/:sessionId**（可选）→ 软删或硬删会话及其消息，按产品策略。
 
 响应：`Content-Type: text/event-stream`
 
@@ -666,7 +789,7 @@ data: {}
 ```json
 { "id": "xxx", "name": "李明", "email": "li@example.com", "ai_nickname": "小研", "preferences": { "reply_style": "简洁" } }
 ```
-（`preferences` 来自 `users.preferences_json` 解析，无则省略或 `{}`。）
+（`email` 可为 `null`；`preferences` 来自 `users.preferences_json` 解析，无则省略或 `{}`。）
 
 **PUT /api/user** → 更新
 ```json
@@ -1048,6 +1171,15 @@ private async selectPrompt(intention: string): Promise<PromptTemplate> {
 
 **构建时机**：每次对话前，`ChatService` 从数据库读取用户信息和 AI 昵称，替换模板变量，并通过 `LLMProvider` 的 `chat` 或 `streamChat` 方法传递系统提示。
 
+**资料缺口与首轮询问（PRD v1.2 §2.2-4）**：在拼装 system 或首条 developer 指令时注入结构化片段，例如：
+
+- `USER_DISPLAY_NAME`：登录名（必有）与「用户愿意被称呼的姓名」可能尚未区分时，在模板中说明二者关系。
+- `PROFILE_GAPS`：若 `email` 为空或 `name` 仅为登录占位、未确认称呼名，则列出缺失项。
+
+并要求模型：**在当前会话中，若本回合是用户的第一条消息之后的首条助手回复**，则在回答用户实质问题的同时，用简短自然语句**询问缺失资料**（缺邮箱则问邮箱，缺可称呼姓名则问希望如何称呼）；已齐全则禁止重复盘问。
+
+实现上可在 `ChatService` 内根据 `session_id` 查询该会话是否已有任何 `role=assistant` 行；若无，则置 `isFirstAssistantTurn = true` 并注入上述约束。
+
 #### 8.1.2 用户消息与工具调用消息的格式
 
 为保持与 OpenAI 函数调用格式兼容，我们统一使用以下消息结构：
@@ -1089,8 +1221,9 @@ export function renderSystemPrompt(template: string, vars: Record<string, string
 
 #### 8.2.1 短期上下文（会话消息历史）
 
-- 存储：使用 `conversations` 表（可选）或内存数组（当前会话）。
-- 策略：保留最近 N 轮对话（默认 10 轮），避免超出模型上下文窗口。当历史超过限制时，可进行 **摘要压缩**（调用 LLM 生成摘要后替换早期消息）。
+- 存储：使用 `conversations` 表，**按 `session_id` 过滤**，仅加载当前线程消息。
+- 策略：保留该会话内最近 N 轮（默认 10 轮），避免超出模型上下文窗口。当历史超过限制时，可进行 **摘要压缩**（调用 LLM 生成摘要后替换早期消息）。
+- **再登录**：不依赖 Worker 内存；历史一律从 D1 按 `session_id` 读取，与 PRD「退出再登录历史可见」一致。
 
 #### 8.2.2 长期记忆（RAG 检索）
 
@@ -1672,6 +1805,7 @@ render(template: string, vars: Record<string, string>): string {
 ```typescript
 private async saveConversation(
   userId: string,
+  sessionId: string,
   userMessage: string,
   assistantMessage: string,
   meta: {
@@ -1683,29 +1817,36 @@ private async saveConversation(
 ): Promise<void> {
   const userMsgId = crypto.randomUUID();
   const assistantMsgId = crypto.randomUUID();
+  const now = Math.floor(Date.now() / 1000);
 
   // 保存用户消息
   await this.db.insert(conversations).values({
     id: userMsgId,
     userId,
+    sessionId,
     role: 'user',
     content: userMessage,
     intention: meta.intention,
     keywords: JSON.stringify(meta.keywords),
-    created_at: Math.floor(Date.now() / 1000),
+    created_at: now,
   });
 
   // 保存 AI 回复
   await this.db.insert(conversations).values({
     id: assistantMsgId,
     userId,
+    sessionId,
     role: 'assistant',
     content: assistantMessage,
     intention: meta.intention,
     promptId: meta.promptId,
-    conversationId: userMsgId, // 关联到用户消息
-    created_at: Math.floor(Date.now() / 1000),
+    conversationId: userMsgId,
+    created_at: now,
   });
+
+  await this.db.update(chatSessions)
+    .set({ updated_at: now })
+    .where(eq(chatSessions.id, sessionId));
 }
 ```
 
@@ -1904,10 +2045,10 @@ sequenceDiagram
     participant ToolRegistry
     participant Serper as Serper API
 
-    User->>Frontend: 输入消息
-    Frontend->>Worker: POST /api/chat/stream
-    Worker->>D1: 获取用户信息、AI昵称
-    D1-->>Worker: 用户信息
+    User->>Frontend: 输入消息（已选 session_id）
+    Frontend->>Worker: POST /api/chat/stream（body 含 session_id）
+    Worker->>D1: 校验 session 归属 + 加载该会话历史消息
+    D1-->>Worker: 用户信息、会话内历史
     Worker->>IntentClassifier: classify(userInput)
     IntentClassifier-->>Worker: intention (e.g., "research")
     Worker->>PromptService: selectTemplate(intention)
@@ -1928,7 +2069,11 @@ sequenceDiagram
     else 无工具调用
         LLM-->>Worker: 流式返回答案
     end
-    Worker->>D1: 保存用户消息和AI回复（含 intention, prompt_id, keywords）
+    Worker->>D1: 保存用户消息和AI回复（含 session_id、intention、prompt_id、keywords）
+    opt 首轮成对消息完成且标题为自动
+        Worker->>LLM: 生成会话标题（轻量调用）
+        Worker->>D1: UPDATE chat_sessions.title
+    end
     Worker-->>Frontend: SSE 流式输出（token、tool_call 等事件）
     Frontend-->>User: 渲染回复
 ```
@@ -2039,25 +2184,26 @@ sequenceDiagram
     participant D1
     participant LLM
 
-    User->>Frontend: 首次打开应用
-    Frontend->>Worker: GET /api/user
-    Worker->>D1: 查询用户信息
-    D1-->>Worker: 空（新用户）
-    Worker-->>Frontend: 无用户信息
-    Frontend->>User: 显示欢迎消息，AI 询问姓名邮箱
-    User->>Frontend: 输入姓名和邮箱
-    Frontend->>Worker: PUT /api/user (name, email)
-    Worker->>D1: 创建用户记录
-    D1-->>Worker: 用户ID
-    Worker-->>Frontend: 成功
-    Frontend->>User: 显示个性化问候
-    User->>Frontend: 后续对话
-    Frontend->>Worker: 发送消息（自动携带用户身份）
-    Worker->>D1: 获取用户信息
-    Worker->>LLM: 对话（已包含用户名）
-    LLM-->>Worker: 回复（称呼用户）
-    Worker-->>Frontend: 显示回复
+    User->>Frontend: 打开登录／落地页（名称必填、邮箱选填）
+    User->>Frontend: 点击「开始吧」或「欢迎回来」
+    Frontend->>Worker: POST /api/auth/login { name, email? }
+    Worker->>D1: 按 name 查重；创建或读取用户
+    D1-->>Worker: user 行
+    Worker-->>Frontend: JWT + user + is_new_user
+    Frontend->>Worker: GET /api/sessions（或 POST 创建首个会话）
+    Worker-->>Frontend: 会话列表含 session_id
+    User->>Frontend: 在会话中发送首条消息
+    Frontend->>Worker: POST /api/chat/stream（session_id）
+    Worker->>D1: 读取用户资料；若 email 等缺失则注入 PROFILE_GAPS
+    Worker->>LLM: 生成回复（须同时询问缺失资料）
+    LLM-->>Worker: 流式正文
+    Worker->>D1: 持久化消息行（session_id）
+    User->>Frontend: 在对话或设置中补充邮箱／称呼
+    Frontend->>Worker: PUT /api/user
+    Worker->>D1: 更新 users
 ```
+
+**再登录**：同一 `name` 调用 `POST /api/auth/login` 返回 `is_new_user: false`，前端 `GET /api/sessions` + `GET /api/sessions/:id/messages` 恢复列表与历史，避免「历史空白」。
 
 ---
 
@@ -2126,9 +2272,11 @@ backend/
 │   │   │   ├── 0004_create_prompt_templates.sql
 │   │   │   ├── 0005_create_conversations.sql
 │   │   │   ├── 0006_create_file_uploads.sql
-│   │   │   └── 0007_prd_alignment.sql
+│   │   │   ├── 0007_prd_alignment.sql
+│   │   │   └── 0008_chat_sessions_and_messages.sql
 │   │   └── repositories/              # 数据访问层
 │   │       ├── UserRepository.ts
+│   │       ├── SessionRepository.ts
 │   │       ├── TaskRepository.ts
 │   │       ├── ProjectRepository.ts
 │   │       ├── FileRepository.ts
@@ -2146,7 +2294,9 @@ backend/
 │   │   ├── TotTool.ts                 # TOT 工具封装
 │   │   └── GotTool.ts                 # GOT 工具封装
 │   ├── api/                           # 路由处理（Hono）
+│   │   ├── auth.ts                    # POST /api/auth/login 等
 │   │   ├── chat.ts                    # 对话接口（SSE）
+│   │   ├── sessions.ts                # 会话列表、历史消息、重命名
 │   │   ├── user.ts                    # 用户信息接口
 │   │   ├── tasks.ts                   # 任务管理接口
 │   │   ├── files.ts                   # 文件管理接口
@@ -2187,6 +2337,8 @@ backend/
 | **D1 数据库错误** | 返回 500，记录日志，提示用户刷新重试。 |
 | **用户输入过长** | 返回提示“消息过长，请精简后重试”。 |
 | **未授权访问** | 返回 401，提示登录。 |
+| **session 不属于当前用户** | 返回 403 或 404，前端清空非法 `sessionId` 并回退会话列表。 |
+| **非法认证参数** | 返回 **400**（如空名称）；名称过长等校验失败同理。 |
 | **文件大小超限** | 返回 413，提示“文件不能超过 64 MB”。 |
 | **R2 上传失败** | 返回 500，前端展示重试按钮；记录错误日志。 |
 | **文本提取失败** | 标记文件 processed = -1，但文件本身仍可下载；用户可手动触发重试。 |

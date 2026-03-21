@@ -82,7 +82,7 @@ export default function LoginPage() {
         )
       } else if (e instanceof ApiError && e.status === 401) {
         toast.error(
-          `后端返回 401。seed 已做过仍如此时，多半是请求没打到「你执行 seed 的那份」本地 D1：保持 VITE_API_BASE 为空，或核对 URL/端口。自检：backend 目录执行 curl -H "Authorization: Bearer ${DEV_LOCAL_USER_ID}" http://127.0.0.1:8787/api/user 应得到 JSON。仅远程 Worker 需在远程 D1 再 seed。`,
+          `后端返回 401：Bearer 中的用户 id 须在「当前请求打到的那份」D1 中存在。本地 wrangler：backend 执行 npm run db:seed:dev-user；线上 Worker：须对远程 D1 执行 npm run db:seed:dev-user:remote。自检 curl 请用与前端相同的 Worker 域名。`,
           { duration: 12000 },
         )
       } else {

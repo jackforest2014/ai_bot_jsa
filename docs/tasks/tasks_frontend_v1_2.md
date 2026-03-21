@@ -1,8 +1,10 @@
 # 前端开发任务列表（按时间顺序）
 
-本文档基于 [前端技术设计方案 v1.2](../technical/tech_design_frontend_v1_2.md) 与产品需求文档拆解任务，按阶段组织。任务粒度以 1 小时为单位，便于进度跟踪。可并行执行的任务放在同一阶段内并列列出。
+本文档基于 [前端技术设计方案 v1.2](../technical/tech_design_frontend_v1_2.md)（含 PRD v1.2 / 文档版本 1.5 起之会话与匿名登录约定）与产品需求文档拆解任务，按阶段组织。任务粒度以 1 小时为单位，便于进度跟踪。可并行执行的任务放在同一阶段内并列列出。
 
 **路径约定**：仓库根目录下以 **`frontend/`** 存放前端工程（与 **`backend/`** 并列，见技术方案「仓库与路径约定」）。**本文所有实现落点一律写仓库相对完整路径**（形如 **`frontend/src/...`**），不写省略形式，避免与 `backend/src` 或包内相对路径混淆。在 `frontend/` 包内配置 Vite 别名时仍可将 `@/` 指到该包下的 `src/`。
+
+**阶段一至三（已完成）与阶段四的关系**：**阶段一、二、三**在任务文档中的描述**保持原验收口径不变**（不在此回头改写已交付范围）。与 [技术方案](../technical/tech_design_frontend_v1_2.md) **PRD v1.2 / 文档 1.5**（匿名登录、`session_id`、会话列表、主对话布局等）相关的**契约对齐与改造**，**一律在阶段四及以后任务中落地**；后端同步演进时，以前后端**最新 OpenAPI / 实现**为准，阶段四按新模式更新 **`frontend/src`** 即可。
 
 ---
 
@@ -54,7 +56,7 @@
 - 类型与 **`frontend/src/api/client.ts`** 集成。
 
 #### 任务 2.4：登录与空资料态（2h）
-- 实现 **`frontend/src/pages/Login/index.tsx`**（路由 `/login`）：建立 Token / 会话（技术方案 §8.2：**身份仍须由登录或等价流程建立**）。
+- 实现 **`frontend/src/pages/Login/index.tsx`**（路由 `/login`）：建立 Token / 会话（技术方案 §8：**身份仍须由登录或等价流程建立**）。
 - **`frontend/src/pages/Chat/index.tsx`** 支持 **资料未全量时的空资料态**：不阻塞进入 Chat，与 PRD「AI 在对话内引导补全」一致；**`frontend/src/pages/Settings/index.tsx`** 作为补充入口。阶段三在同一 Chat 页挂载的组件以 [技术方案 §6.1](../technical/tech_design_frontend_v1_2.md) 所列 **`frontend/src/components/chat/`**、**`frontend/src/components/tasks/`** 下文件为准（逐文件完整路径见该节树状图）。
 
 ---
@@ -95,89 +97,137 @@
 
 ---
 
-## 阶段四：个人工作空间（文件管理）（预计总工时：22h）
+## 阶段四：匿名登录、会话列表与主对话布局（PRD v1.2 / 技术方案 §4.2、§5.2、§6.2.6、§6.2.7、§8）（预计总工时：18h）
+
+**本阶段负责与 v1.2 新模式对齐**（阶段一至三已交付代码的**增量改造与契约收敛**集中在此完成，**不修改**阶段一至三在本文中的任务定义）。
+
+对应技术文档版本 **1.5** 起：**DeepSeek 式主对话区** + 侧栏可折叠 **会话列表**、**`session_id`** 与历史拉取、**`POST /api/auth/login`** 与 **`/api/sessions`** 系列、**登出再登入须重新拉会话与消息**（§4.2、已知实现缺口说明）。
+
+### 并行任务组 I（可并行执行，总工时：9h）
+
+#### 任务 4.1：认证与会话 API 与类型（3h）
+- 新增 **`frontend/src/api/auth.ts`**：**`login`**（`POST /api/auth/login`，body：`name` 必填、**`email` 选填**；响应 **`token`、`user`、`is_new_user`**）；可选 **`profileExists(name)`**（路径与 query 以**后端最终实现**为准，用于按钮文案预切换）。
+- 新增 **`frontend/src/api/sessions.ts`**：**`list`**、**`create`（POST）**、**`messages(sessionId, { cursor?, limit? })`**、**`rename(sessionId, title)`（PATCH）**；类型 **`ChatSession`**（`id`、`title`、`created_at`、`updated_at`）与 **`frontend/src/types/chat.ts`** 中消息类型对齐列表接口。
+- 同步 **`frontend/src/types/user.ts`**：**`email` 可为空**（`string | null | undefined`，与 PRD v1.2、技术方案 §5.2 一致）。
+- 更新 **`frontend/src/types/chat.ts`** 中流式请求体类型（如 **`ChatStreamRequestBody`**）：与后端一致使用 **`session_id`**；若后端不再使用旧字段，则移除或替换原 **`conversation_id`** 约定（以 OpenAPI/实现为准）。
+- **`frontend/src/lib/user-from-api.ts`**（若存在）：解析登录 / `GET /api/user` 响应时兼容 **可空邮箱**。
+
+#### 任务 4.2：chatSessionStore 与登录后 bootstrap（3h）
+- 新增 **`frontend/src/store/chatSessionStore.ts`**（或按技术方案并入 uiStore，但职责建议独立）：**会话列表**、**当前 `activeSessionId`**、**加载态**；方法含 **`setSessions`、`setActiveSessionId`、`upsertSession`、`removeSession`** 等。
+- **localStorage** 可选键 **`activeSessionId`**（技术方案 §4.1）；**登录成功后须先 `GET /api/sessions` 再渲染会话 UI**，并与持久化 id **校验仍存在**。
+- **登出再登入**：**重新请求会话列表与各会话消息**，不得以空状态覆盖已持久化历史（技术方案「已知实现缺口」、PRD v1.2 §5.9-B）；与 **`RequireAuth`** 登录成功路径协同。
+- **`frontend/src/store/userStore.ts` 的 `clearUser`**：同时 **重置 `chatSessionStore`**（列表、当前会话、内存消息状态由 Chat 页/Hook 协同清空），并 **清除 `activeSessionId` 的 localStorage**，避免登出后残留 id。
+
+#### 任务 4.3：匿名登录页与落地视觉（3h）
+- 改造 **`frontend/src/pages/Login/index.tsx`**（技术方案 §6.2.7、§8.1）：主路径为表单 **名称必填**、**邮箱选填**，提交 **`authAPI.login`**；替代或收敛原 **粘贴 Token / 仅开发用** 入口（若保留，限于 **`import.meta.env.DEV`** 或文档明示的运维场景，避免与产品主流程混淆）。
+- **失焦预检**：可选调用 **`profileExists`**，**`exists: false` →「开始吧」**，**`exists: true` →「欢迎回来」**（仅文案，不替代正式登录）。
+- 成功：写入 **`userStore` / `token`**，并按 **4.2** 拉会话；**`is_new_user`** 区分成功反馈（toast 等）。
+- **视觉**：深色渐变、微粒/网格或柔和光晕等 **科技感**（控制性能与对比度），**不削弱表单可读性**。
+- **`frontend/src/lib/profile.ts`** 与 **`frontend/src/pages/Chat/index.tsx`**：**`isProfileIncomplete`** 与空资料横幅按 v1.2 调整——**邮箱可空，不因缺邮箱视为「资料不完整」**；缺省仅 **`name`** 等仍与 PRD 首轮补全策略一致（与设置页补充入口配合）。
+
+### 并行任务组 J（可并行执行，总工时：9h）
+
+（组 J 与组 I 可并行；**4.5** 依赖 **4.1～4.2** 的类型与 Store，**4.4** 依赖 **4.2** 的列表数据。）
+
+#### 任务 4.4：侧栏会话列表与重命名（4h）
+- 实现 **`frontend/src/components/chat/SessionList.tsx`**、**`frontend/src/components/chat/SessionListItem.tsx`**、**`frontend/src/components/chat/SessionRenameInline.tsx`**（技术方案 §6.1）：列表按 **`updated_at` 排序**；**当前 `sessionId` 高亮**。
+- 改造 **`frontend/src/components/layout/Sidebar.tsx`**：在「对话」导航下增加 **可折叠面板**，内嵌 **`SessionList`**；与 **`frontend/src/store/uiStore.ts`** 侧栏折叠协同。
+- **`SessionListItem`**：**右键**（原生 `contextmenu` 或自定义菜单）→「修改名称」→ 行内 **`SessionRenameInline`**，**失焦/回车** 调 **`sessionsAPI.rename`**，成功后更新 Store。
+
+#### 任务 4.5：Chat 主区布局、历史与流式 session_id（5h）
+- 改造 **`frontend/src/pages/Chat/index.tsx`**（技术方案 §6.2.6、§13）：**中间主栏单列**消息流 + 底部输入（视觉参考 DeepSeek：**宽屏居中、留白**）；任务/文件入口仍在侧栏，**不把任务列表挤占主对话区**。
+- **切换会话**：**`setActiveSessionId`** → **`GET /api/sessions/:id/messages`** 填充 **`MessageList`** / 消息状态；**新对话**：**`POST /api/sessions`** 后选中新 **`id`**。
+- **`frontend/src/lib/chat-stream.ts`** 的 **`consumeChatStream`**：POST body **必须携带当前 `session_id`**（与 **`chatSessionStore`** 一致）；与阶段三已实现的 SSE 解析逻辑**合并**，仅替换/扩展请求体字段（**以后端字段名为准**，与 **4.1** 类型一致）。
+- **`frontend/src/hooks/useChatStream.ts`**：从 Store 或 props 读取 **`activeSessionId`**，无有效会话时禁止发送或先 **`create` 会话**；移除对仅 **`conversation_id`** 的依赖（若后端已废弃）。
+- **`frontend/src/components/chat/ChatInput.tsx`**：与 **`useChatStream` / Chat 页** 协同，保证发起流式时始终附带 **同一 `session_id`**。
+- 流式结束后可 **`sessionsAPI.list()`** 刷新标题（以后端 **`chat_sessions.title`** 为准）。
+- 会话标题展示与阶段三已有 **`Message` / `ChatInput`** 等组件拼装闭环。
+
+---
+
+## 阶段五：个人工作空间（文件管理）（预计总工时：22h）
 
 ### 并行任务组 E（可并行执行，总工时：12h）
 
-#### 任务 4.1：文件列表组件（3h）
+#### 任务 5.1：文件列表组件（3h）
 - **`frontend/src/components/files/FileList.tsx`**：网格 / 列表切换；**`GET /api/files` 支持 `?folder=`、`?type=`**（技术方案 §5.2）；可选 **`frontend/src/components/files/FolderBreadcrumb.tsx`** 与 folder 前缀一致；筛选 / 视图切换可与 **`frontend/src/components/files/FileToolbar.tsx`** 合并实现。
 - **`frontend/src/components/files/FileCard.tsx`**：文件名、大小、时间、语义类型、**`tags`**、**`folder_path`**、**`processed`**（`0` / `1` / `-1` 态与提示，技术方案 §6.2.3）。
 - 操作：重命名、删除、下载、改语义类型、**编辑 tags（`PUT /api/files/:id/tags`）**（调用 **`frontend/src/api/files.ts`**）。
 - 在 **`frontend/src/pages/Files/FileWorkspace.tsx`** 组合 **`frontend/src/components/files/FileList.tsx`**、**`frontend/src/components/files/FileCard.tsx`**、**`frontend/src/components/files/FolderBreadcrumb.tsx`**（可选）、**`frontend/src/components/files/FileToolbar.tsx`**（可与 FileList 合并）、**`frontend/src/components/files/UploadDropzone.tsx`**、**`frontend/src/components/files/UploadProgress.tsx`**、**`frontend/src/components/files/SemanticTypeModal.tsx`** 与 **`frontend/src/hooks/useFiles.ts`** / **`frontend/src/hooks/useFileUpload.ts`**。
 
-#### 任务 4.2：上传核心逻辑（双路径 + 分片）（5h）
+#### 任务 5.2：上传核心逻辑（双路径 + 分片）（5h）
 - 实现 **`frontend/src/hooks/useFileUpload.ts`**：
   - 选择后 **客户端校验 `size <= 64MB`**，否则中止并提示（技术方案 §6.2.4、§11）。
   - **小文件**（与后端约定如 **≤5MB**）：`FormData` → **`POST /api/files/upload`**（字段 `file`、`semantic_type`，可选 **`folder_path`、`tags`（JSON 字符串）**）。
   - **更大且 ≤64MB**：`initiate-multipart` → 分片 `PUT` 预签名 URL → **`complete-multipart` 提交 `upload_id`、`r2_key`（来自 initiate 响应）、`parts`**（技术方案 §11）。
 - XHR `upload.onprogress`、失败与分片级 / 整单重试。
 
-#### 任务 4.3：上传进度与状态反馈（4h）
+#### 任务 5.3：上传进度与状态反馈（4h）
 - **`frontend/src/components/files/UploadProgress.tsx`**：占位虚线节点、完成实线、失败红框与重试（PRD 2.5.3）。
-- 成功 / 失败：**toast + 可选 `Notification`**（与阶段五可合并验收；Toast 容器通常在 **`frontend/src/App.tsx`**）。
+- 成功 / 失败：**toast + 可选 `Notification`**（与阶段六可合并验收；Toast 容器通常在 **`frontend/src/App.tsx`**）。
 
 ### 并行任务组 F（可并行执行，总工时：10h）
 
-#### 任务 4.4：拖拽上传区域（2h）
+#### 任务 5.4：拖拽上传区域（2h）
 - **`frontend/src/components/files/UploadDropzone.tsx`**：`react-dropzone` 封装；点击选择文件。
 
-#### 任务 4.5：元数据弹窗（2h）
+#### 任务 5.5：元数据弹窗（2h）
 - **`frontend/src/components/files/SemanticTypeModal.tsx`**（`react-hook-form`）：必填语义类型；可选 **`folder_path`、初始 `tags`**（技术方案 §6.2.4）。
 - 语义类型选项：后端或预定义列表。
 
-#### 任务 4.6：文件操作 API 封装（2h）
+#### 任务 5.6：文件操作 API 封装（2h）
 - **`frontend/src/api/files.ts`**：**`list`（query）**、**`uploadSmall`**、**`initiateMultipart`**、**`completeMultipart`**、**`updateTags`**、`delete`、`rename`、`updateSemanticType`、`download`（技术方案 §5.2）。
 - 下载：签名 URL 触发浏览器下载。
 
-#### 任务 4.7：文件搜索、筛选与排序（2h）
+#### 任务 5.7：文件搜索、筛选与排序（2h）
 - 文件名搜索（防抖）、语义类型筛选、排序（时间 / 名称 / 大小）。
 - **`frontend/src/hooks/useFiles.ts`（可选）**：与列表刷新、缓存 key 策略配合（技术方案 §9）。
 
-#### 任务 4.8：Hooks 与 IndexedDB 键策略（2h）
+#### 任务 5.8：Hooks 与 IndexedDB 键策略（2h）
 - **`frontend/src/hooks/useFiles.ts`** / **`frontend/src/hooks/useFileUpload.ts`** 与 **`frontend/src/api/files.ts`**、**`frontend/src/store/userStore.ts`**（如需）、**`frontend/src/store/uiStore.ts`**（如需）边界清晰。
 - 文件列表缓存：**按 `folder` 前缀或查询串区分 IndexedDB key**，避免陈旧数据（技术方案 §4.1、§9）。
 
 ---
 
-## 阶段五：系统集成与用户体验优化（预计总工时：13h）
+## 阶段六：系统集成与用户体验优化（预计总工时：13h）
 
 ### 并行任务组 G（可并行执行，总工时：13h）
 
-#### 任务 5.1：全局通知与错误处理（2h）
+#### 任务 6.1：全局通知与错误处理（2h）
 - 在 **`frontend/src/App.tsx`**（或 **`frontend/src/main.tsx`**）挂载 `react-hot-toast` 的 Toaster，统一 success / error。
 - 上传成功 / 失败：**Notification API**（用户授权后，技术方案 §1 选型表；调用点可在 **`frontend/src/hooks/useFileUpload.ts`** 或 **`frontend/src/components/files/UploadProgress.tsx`**）。
 
-#### 任务 5.2：用户设置页面（3h）
+#### 任务 6.2：用户设置页面（3h）
 - **`frontend/src/pages/Settings/index.tsx`**（路由 `/settings`）：用户信息、**偏好 `preferences` 表单**（`PUT /api/user` 与 **`frontend/src/store/userStore.ts`** 同步）、AI 昵称（技术方案 §8.1、§7.2）。
 
-#### 任务 5.3：离线缓存策略（3h）
+#### 任务 6.3：离线缓存策略（3h）
 - `idb` 封装（**`frontend/src/lib/idb.ts`**）；与 **`frontend/src/hooks/useFiles.ts`** / **`frontend/src/pages/Files/FileWorkspace.tsx`** 协同：文件列表离线读取与 **离线提示**。
 - 与 **folder / tags 变更** 的失效或分区策略一致（技术方案 §4.1）。
 
-#### 任务 5.4：响应式与移动端适配（2h）
+#### 任务 6.4：响应式与移动端适配（2h）
 - Tailwind 断点；**`frontend/src/components/layout/Sidebar.tsx`** / **`frontend/src/components/layout/AppShell.tsx`** 对话侧栏可折叠；**`frontend/src/pages/Files/FileWorkspace.tsx`** 与 **`frontend/src/components/files/FileList.tsx`** 工作空间网格小屏单列。
 
-#### 任务 5.5：性能优化与代码分割（2h）
+#### 任务 6.5：性能优化与代码分割（2h）
 - **`frontend/src/App.tsx`** 或 **`frontend/src/router/index.tsx`** 使用 `React.lazy` 按需加载 **`frontend/src/pages/Files/FileWorkspace.tsx`**、**`frontend/src/pages/Settings/index.tsx`**、**`frontend/src/pages/Chat/index.tsx`** 等（技术方案 §9）。
 - `useMemo` / `useCallback` 优化长列表；可选虚拟滚动（**`frontend/src/components/chat/MessageList.tsx`**，技术方案 §9）。
 
-#### 任务 5.6：本地存储与持久化（1h）
-- localStorage：`user`（含 **preferences 摘要**）、`token`；与后端拉取一致（读写与 **`frontend/src/store/userStore.ts`** 持久化中间件、**`frontend/src/api/user.ts`** 对齐）。
+#### 任务 6.6：本地存储与持久化（1h）
+- localStorage：`user`（含 **preferences 摘要**）、`token`、**可选 `activeSessionId`**（与阶段四 Store 一致）；与后端拉取一致（读写与 **`frontend/src/store/userStore.ts`**、**`frontend/src/store/chatSessionStore.ts`**、**`frontend/src/api/user.ts`** 对齐）。
 
 ---
 
-## 阶段六：测试与部署（预计总工时：13h）
+## 阶段七：测试与部署（预计总工时：13h）
 
 ### 并行任务组 H（可并行执行，总工时：13h）
 
-#### 任务 6.1：单元测试与组件测试（4h）
+#### 任务 7.1：单元测试与组件测试（4h）
 - Vitest + RTL（配置在 **`frontend/vitest.config.ts`** 等）：**`frontend/src/lib/chat-stream.ts`**（SSE 解析）、**`frontend/src/hooks/useFileUpload.ts`**（上传状态机）、**64MB 校验**；**`frontend/src/components/chat/Message.tsx`** + 引用、**`frontend/src/components/chat/ToolCallMark.tsx`**、**`frontend/src/components/files/FileCard.tsx`**（**`processed` 态**）、**`frontend/src/lib/utils.ts`**（技术方案 §14）。测试文件建议与源同目录 **`*.test.ts(x)`** 或 **`frontend/src/__tests__/`**。
 
-#### 任务 6.2：端到端测试（Playwright）（5h）
-- 规格目录 **`frontend/e2e/`**（或技术方案 §13 约定路径）：登录 → 对话；**流式对话与元数据**（若有稳定桩）。
+#### 任务 7.2：端到端测试（Playwright）（5h）
+- 规格目录 **`frontend/e2e/`**（或技术方案 §13 约定路径）：**匿名登录（新用户 / 回访）**、**会话切换与历史**、**右键重命名**；流式对话与元数据（若有稳定桩）。
 - 任务列表与 **detail**；**小文件与分片上传**（含 **`r2_key` 完成流**）；**tags / folder**；**preferences**；修改 AI 昵称；离线缓存展示。
 
-#### 任务 6.3：构建与部署（4h）
+#### 任务 7.3：构建与部署（4h）
 - 在 **`frontend/`** 目录执行 Vite 生产构建（`npm run build`，读取 **`frontend/vite.config.ts`** 等）；部署 Cloudflare Pages / Vercel 时将**项目根目录指向 `frontend/`**；**生产环境变量 `VITE_API_BASE`**；CORS 由后端配置（技术方案 §12）。
 
 ---
@@ -189,19 +239,21 @@
 | 阶段一：项目初始化与基础架构 | 9h |
 | 阶段二：全局状态与用户模块 | 7h |
 | 阶段三：对话模块 | 18h |
-| 阶段四：个人工作空间（文件管理） | 22h |
-| 阶段五：系统集成与用户体验优化 | 13h |
-| 阶段六：测试与部署 | 13h |
-| **总计** | **82h** |
+| 阶段四：匿名登录、会话列表与主对话布局 | 18h |
+| 阶段五：个人工作空间（文件管理） | 22h |
+| 阶段六：系统集成与用户体验优化 | 13h |
+| 阶段七：测试与部署 | 13h |
+| **总计** | **100h** |
 
-按每日有效工作 6 小时计算，约需 **14 个工作日**（不含并行优化）。并行任务可多人同时进行，实际交付周期可缩短。
+按每日有效工作 6 小时计算，约需 **17 个工作日**（不含并行优化）。并行任务可多人同时进行，实际交付周期可缩短。
 
 ---
 
 ## 并行执行建议
 
 - **阶段三**：组 C（**`frontend/src/lib/chat-stream.ts`**、**`frontend/src/hooks/useChatStream.ts`**、**`frontend/src/components/chat/Message.tsx`**、**`frontend/src/components/chat/ToolCallMark.tsx`**、**`frontend/src/components/chat/RagCitation.tsx`**）与组 D（**`frontend/src/components/chat/ChatInput.tsx`**、**`frontend/src/components/tasks/TaskSidebar.tsx`**、**`frontend/src/api/tasks.ts`**、错误与限流文案）可并行，2 人约 4 天量级。
-- **阶段四**：组 E（**`frontend/src/components/files/FileList.tsx`**、**`frontend/src/components/files/FileCard.tsx`**、**`frontend/src/hooks/useFileUpload.ts`**、**`frontend/src/components/files/UploadProgress.tsx`**）与组 F（**`frontend/src/components/files/UploadDropzone.tsx`**、**`frontend/src/components/files/SemanticTypeModal.tsx`**、**`frontend/src/api/files.ts`**、**`frontend/src/hooks/useFiles.ts`**、IndexedDB 键）可并行，2 人约 4～5 天量级。
-- **阶段五、六** 可与功能开发中后期穿插（测试用例、部署流水线）。
+- **阶段四**：组 I（**`auth`/`sessions` API**、**类型与 `ChatStreamRequestBody`**、**`chatSessionStore`/`clearUser` 联动**、**登录页与 `profile`**）与组 J（**`SessionList`**、**`Sidebar`**、**`Chat` 主区**、**`consumeChatStream`/`useChatStream` 的 `session_id`**）可并行；**4.5** 依赖 **4.1～4.2**，宜在阶段三流式与消息组件基本可用后联调。
+- **阶段五**：组 E（**`frontend/src/components/files/FileList.tsx`**、**`frontend/src/components/files/FileCard.tsx`**、**`frontend/src/hooks/useFileUpload.ts`**、**`frontend/src/components/files/UploadProgress.tsx`**）与组 F（**`frontend/src/components/files/UploadDropzone.tsx`**、**`frontend/src/components/files/SemanticTypeModal.tsx`**、**`frontend/src/api/files.ts`**、**`frontend/src/hooks/useFiles.ts`**、IndexedDB 键）可并行，2 人约 4～5 天量级。
+- **阶段六、七** 可与功能开发中后期穿插（测试用例、部署流水线）。
 
-任务列表随 [tech_design_frontend_v1_2.md](../technical/tech_design_frontend_v1_2.md)（含 **`frontend/`** 路径约定）与后端 §5 契约变更而修订，**以仓库内设计与 OpenAPI（若有）为单一事实来源**。
+任务列表随 [tech_design_frontend_v1_2.md](../technical/tech_design_frontend_v1_2.md)（含 **`frontend/`** 路径约定、**PRD v1.2 / 文档 1.5** 会话与认证变更）与后端 §5 契约变更而修订，**以仓库内设计与 OpenAPI（若有）为单一事实来源**。

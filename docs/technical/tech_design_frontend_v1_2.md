@@ -1,4 +1,4 @@
-# 前端技术设计方案（v1.2，对齐 PRD v1.1）
+# 前端技术设计方案（v1.2，对齐 PRD v1.2）
 
 ## 文档版本
 
@@ -8,13 +8,15 @@
 | 1.2 | 2026-03-21 | AI Assistant | 对齐 [PRD v1.1](../products/ai_bot_v1_1.md) 与后端 [tech_design_ai_bot_v1_2.md](./tech_design_ai_bot_v1_2.md)（§5.x）：SSE `tool_result_meta`/`citation`、`preferences`、任务 `detail`、文件 `folder_path`/`tags`/`processed`、完整 files API、小文件/分片双路径、64MB 校验、浏览器通知、搜索/研究态与配额提示、登录与 AI 引导关系说明 |
 | 1.3 | 2026-03-21 | AI Assistant | §6.1、§13：由「增量片段」改为**完整目录约定**（`src/components/` 全树 + 全量 `src/` 与根配置），与 §3 模块表及 [tasks_frontend_v1_2.md](../tasks/tasks_frontend_v1_2.md) 中的路径、组件名对齐 |
 | 1.4 | 2026-03-21 | AI Assistant | 与仓库布局对齐：**前端工程根为 `frontend/`**（与根目录 **`backend/`** 并列）；§3 关键路径、§6.1 / §13 树状结构均以 `frontend/` 为前缀；代码片段中 `// src/...` 注释仍表示 `frontend/src/...` |
+| 1.5 | 2026-03-21 | AI Assistant | 对齐 [PRD v1.2](../products/ai_bot_v1_1.md) 与后端 **§1.4**：DeepSeek 式主对话区 + 可折叠会话列表、`session_id` 与历史拉取、匿名登录页（名称必填/邮箱选填、「开始吧」/「欢迎回来」）、会话右键重命名、落地页科技感视觉；`POST /api/auth/login`、`/api/sessions` 系列 |
 
 ### 与 PRD / 后端的范围说明
 
 - **仓库与路径约定**：本仓库在根目录下以 **`frontend/`** 存放前端工程（与 **`backend/`** 并列）。**§3 模块表「关键文件」、§6.1、§13** 中的路径均相对于 **`frontend/`**（即从仓库根看为 `frontend/src/...`）。文中 TypeScript 示例顶部的 `// src/...` 注释沿用 Vite 习惯，含义同上。
-- **以后端契约为准**：接口路径、请求体字段、SSE 事件名以 `tech_design_ai_bot_v1_2.md` 为准；若后端变更，前端类型与 Hook 应同步更新。
+- **以后端契约为准**：接口路径、请求体字段、SSE 事件名以 `tech_design_ai_bot_v1_2.md`（含 **§5.0、§5.1.1**）为准；若后端变更，前端类型与 Hook 应同步更新。
 - **PRD 2.5.1 文件夹**：v1.1 可采用 **逻辑路径 `folder_path` + `GET ?folder=`**（与后端一致），完整「创建文件夹」树形 UI 可作为后续迭代。
-- **流式对话**：除正文 token 外，须消费 **`tool_result_meta`、`citation`（及可选 `intention`）** 以满足 PRD 2.1-4、5.6（悬停展示搜索/RAG 元数据）。
+- **流式对话**：除正文 token 外，须消费 **`tool_result_meta`、`citation`（及可选 `intention`）** 以满足 PRD 2.1-4、5.6（悬停展示搜索/RAG 元数据）。**`POST /api/chat/stream` 请求体须带 `session_id`**（当前选中会话）。
+- **已知实现缺口（v1.2 须闭环）**：登出再登入后须 **重新请求会话列表与各会话消息**，不得以空状态覆盖已持久化历史（与 PRD 5.9-B 一致）。
 
 ---
 
@@ -53,7 +55,9 @@
 │  │  │                   页面组件层                         │  │  │
 │  │  │  ┌──────────────┐ ┌──────────────┐ ┌────────────┐  │  │  │
 │  │  │  │ 对话页面     │ │ 工作空间页面 │ │ 设置页面   │  │  │  │
-│  │  │  │ (Chat)      │ │ (Files)      │ │ (Settings) │  │  │  │
+│  │  │  │ (Chat)       │ │ (Files)      │ │ (Settings) │  │  │  │
+│  │  │  │ 主区单列对话 │ │              │ │            │  │  │  │
+│  │  │  │ + 侧栏会话列表│ │              │ │            │  │  │  │
 │  │  │  └──────────────┘ └──────────────┘ └────────────┘  │  │  │
 │  │  └─────────────────────────────────────────────────────┘  │  │
 │  │  ┌─────────────────────────────────────────────────────┐  │  │
@@ -84,10 +88,13 @@
 | 模块 | 职责 | 关键文件 |
 |------|------|----------|
 | **路由模块** | 页面路由定义、守卫、懒加载 | `frontend/src/router/index.tsx`, `frontend/src/router/guards.ts` |
-| **全局状态管理** | 用户信息、**preferences**、AI 昵称、对话辅助态（搜索中/研究中） | `frontend/src/store/userStore.ts`, `frontend/src/store/uiStore.ts` |
-| **HTTP 客户端** | API 请求封装、拦截器、错误处理、**413 文件过大** | `frontend/src/api/client.ts` |
-| **SSE / 对话流** | 解析 `token` + **`tool_result_meta`** + **`citation`** + `intention` | `frontend/src/lib/chat-stream.ts`, `frontend/src/hooks/useChatStream.ts` |
-| **对话模块** | 对话界面、消息流、富文本与引用悬停 | `frontend/src/pages/Chat/`, `frontend/src/components/chat/` |
+| **全局状态管理** | 用户信息、**preferences**、AI 昵称、**当前 `sessionId`、会话列表摘要**、对话辅助态（搜索中/研究中） | `frontend/src/store/userStore.ts`, `frontend/src/store/chatSessionStore.ts`（或并入 uiStore）、`frontend/src/store/uiStore.ts` |
+| **HTTP 客户端** | API 请求封装、拦截器、错误处理、**413 文件过大**、**4xx 业务错误**（如未来名称策略变更） | `frontend/src/api/client.ts` |
+| **认证** | 匿名登录、`is_new_user`、可选名称预检 | `frontend/src/api/auth.ts`, `frontend/src/hooks/useAuthLogin.ts`（可选） |
+| **会话** | 列表、创建、消息分页、重命名 | `frontend/src/api/sessions.ts`, `frontend/src/hooks/useSessions.ts` |
+| **SSE / 对话流** | 解析 `token` + **`tool_result_meta`** + **`citation`** + `intention`；**随请求携带 `session_id`** | `frontend/src/lib/chat-stream.ts`, `frontend/src/hooks/useChatStream.ts` |
+| **对话模块** | **中间单列对话区（参考 DeepSeek）**、底部输入；消息流、富文本与引用悬停 | `frontend/src/pages/Chat/`, `frontend/src/components/chat/` |
+| **布局 / 会话列表** | 侧栏「对话」下 **可折叠** 会话列表；**右键菜单「修改名称」**、原位编辑 | `frontend/src/components/layout/Sidebar.tsx`, `frontend/src/components/chat/SessionList.tsx`, `SessionRenameInline.tsx` |
 | **任务模块** | 任务列表、**detail/子任务**展示（与对话互补） | `frontend/src/components/tasks/`, `frontend/src/hooks/useTasks.ts` |
 | **文件管理模块** | 列表筛选、上传（小/大）、标签、路径、**processed** 展示 | `frontend/src/pages/Files/`, `frontend/src/hooks/useFiles.ts`, `frontend/src/hooks/useFileUpload.ts` |
 | **用户设置模块** | 用户信息、**preferences**、AI 昵称 | `frontend/src/pages/Settings/` |
@@ -103,8 +110,9 @@
 
 | 存储方式 | 键名 | 存储内容 | 说明 |
 |----------|------|----------|------|
-| localStorage | `user` | 用户 ID、姓名、邮箱、AI 昵称、**preferences（摘要）** | 与 `GET /api/user` 对齐；刷新后先展示缓存再异步拉取 |
-| localStorage | `token` | 认证 Token | 保持登录状态 |
+| localStorage | `user` | 用户 ID、姓名、**邮箱可空**、AI 昵称、**preferences（摘要）** | 与 `GET /api/user` 对齐；刷新后先展示缓存再异步拉取 |
+| localStorage | `token` | 认证 Token | 由 **`POST /api/auth/login`** 写入；登出清除 |
+| localStorage | `activeSessionId`（可选） | 上次选中会话 | 提升回访体验；**登录后须与 `GET /api/sessions` 校验** 仍存在 |
 | IndexedDB | `files` | 文件列表（离线缓存） | 使用 `idb` 库；**需随 `folder_path`/tags 变化失效或分区键** |
 | IndexedDB | `messages` | 最近对话消息（可选） | 断网展示；与 PRD「短期记忆以服务端为准」不冲突 |
 
@@ -112,7 +120,7 @@
 
 - **用户信息**：首次登录后写入 localStorage；**`preferences` 更新后**同步写入并与服务端 PUT 一致。
 - **文件列表**：拉取后写入 IndexedDB；网络断开时只读缓存并提示「离线」。
-- **对话历史**：当前会话以内存 + 流式状态为主；刷新后依赖后端会话恢复能力（PRD 约束与假设 §4）。
+- **对话历史**：以**当前 `session_id`** 为键；进入会话或切换会话时 **`GET /api/sessions/:id/messages`** 拉取；**登录成功后必须先拉会话列表再渲染**，避免登出再登入后列表/消息为空（PRD v1.2 §5.9-B）。
 
 ---
 
@@ -153,7 +161,37 @@ export function apiUrl(path: string): string {
 ### 5.2 API 接口封装（与后端 §5 对齐）
 
 ```typescript
-// src/types/user.ts — User 含 preferences?: Record<string, unknown>
+// src/types/user.ts — User 含 preferences?: Record<string, unknown>；email?: string | null（PRD v1.2 可选邮箱）
+
+// src/api/auth.ts
+export const authAPI = {
+  login: (body: { name: string; email?: string | null }) =>
+    request<{ token: string; user: User; is_new_user: boolean }>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  /** 可选：失焦预检名称是否已有账号（仅影响按钮文案，不登录） */
+  profileExists: (name: string) =>
+    request<{ exists: boolean }>(`/api/auth/profile-exists?name=${encodeURIComponent(name)}`),
+};
+
+// src/api/sessions.ts
+import type { ChatMessage } from '../types/chat';
+export type ChatSession = { id: string; title: string; created_at: number; updated_at: number };
+
+export const sessionsAPI = {
+  list: () => request<ChatSession[]>('/api/sessions'),
+  create: () => request<ChatSession>('/api/sessions', { method: 'POST' }),
+  messages: (sessionId: string, q?: { cursor?: string; limit?: number }) => {
+    const p = new URLSearchParams();
+    if (q?.cursor) p.set('cursor', q.cursor);
+    if (q?.limit) p.set('limit', String(q.limit));
+    const qs = p.toString();
+    return request<ChatMessage[]>(`/api/sessions/${sessionId}/messages${qs ? `?${qs}` : ''}`); // ChatMessage：与 SSE/消息列表对齐
+  },
+  rename: (sessionId: string, title: string) =>
+    request(`/api/sessions/${sessionId}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
+};
 
 // src/api/user.ts
 export const userAPI = {
@@ -240,7 +278,7 @@ export const filesAPI = {
 
 1. **首选**：自定义 `fetch(apiUrl('/api/chat/stream'), …)` 读取 `ReadableStream`，按 SSE 行解析，将 `token` 拼入 assistant 消息，将 `tool_result_meta`/`citation` 写入 **当前 assistant 消息的附属结构**（如 `message.data.citations[]`）或 Zustand `streamMetaByMessageId`。
 2. **若沿用 `useChat`**：通过 **`experimental_transform`** 或官方文档支持的 **自定义 transport / data stream**（以当前 `ai` 包版本为准）；若默认不转发自定义事件，则采用 (1)。
-3. **对话 URL**：`apiUrl('/api/chat/stream')`，**不得**依赖相对路径 `/api/...` 指向前端 origin。
+3. **对话 URL**：`apiUrl('/api/chat/stream')`，**不得**依赖相对路径 `/api/...` 指向前端 origin。请求 JSON 须包含 **`session_id`**（与后端 §5.1 一致）。
 
 ---
 
@@ -255,13 +293,16 @@ frontend/src/components/
 ├── layout/                    # 全局壳层：与架构图中 Header / 侧边栏对应
 │   ├── AppShell.tsx           # Outlet + 公共布局槽位
 │   ├── Header.tsx
-│   └── Sidebar.tsx            # 导航：Chat / Files / Settings 等
+│   └── Sidebar.tsx            # 导航：Chat（下挂可折叠会话列表）/ Files / Settings
 ├── auth/
 │   └── RequireAuth.tsx        # 与 §8.3 路由守卫配合（未登录跳转 /login）
 ├── chat/                      # 对话页专用（对应 frontend/src/pages/Chat/）
+│   ├── SessionList.tsx        # 可折叠区内的会话列表；与 Sidebar 协同
+│   ├── SessionListItem.tsx    # 单行：标题、时间；onContextMenu →「修改名称」
+│   ├── SessionRenameInline.tsx # 原位 input + 失焦/回车 → PATCH
 │   ├── Message.tsx            # Markdown、<rag>/<tool> 与 SSE 元数据关联
 │   ├── MessageList.tsx        # 可选：配合 react-window / react-virtual
-│   ├── ChatInput.tsx          # 多行输入、发送/中止流式请求
+│   ├── ChatInput.tsx          # 多行输入、发送/中止流式请求（附带当前 session_id）
 │   ├── ToolCallMark.tsx       # 搜索等：绑定 tool_result_meta
 │   ├── RagCitation.tsx        # RAG：绑定 citation + 正文 <rag>
 │   └── ChatStatusIndicator.tsx # 「正在搜索…」「深度研究中…」等（intention / 工具起止）
@@ -313,6 +354,22 @@ frontend/src/components/
 - 根据 **`intention`** 或工具调用开始/结束：展示 **「正在搜索…」「正在整理研究结果…」** 等，避免长时间无反馈。
 - 后端返回 **Serper 软限/降级** 文案时，在气泡或 toast 中原文友好展示（PRD 2.6.2-6）。
 
+#### 6.2.6 主对话区与侧栏会话（PRD v1.2 §2.1、§2.9）
+
+- **布局**：中间主栏仅保留 **单列消息流 + 底部输入**，视觉权重参考 [DeepSeek Chat](https://chat.deepseek.com/)（宽屏居中、留白与层次清晰）；任务/文件入口仍在侧栏或顶栏，**不把任务列表挤占主对话区**。
+- **侧栏**：「对话」菜单项下为 **可折叠面板**，内嵌 `SessionList`；展开时展示按 `updated_at` 排序的会话行，**当前 `sessionId` 高亮**。
+- **切换**：点击会话 → `setSessionId` → `GET .../messages` 填充 `MessageList`；发送新消息时 `useChatStream` 使用同一 `session_id`。
+- **新会话**：提供「新对话」入口 → `POST /api/sessions` 后选中新 `id`。
+- **右键重命名**：`SessionListItem` 上 `onContextMenu` 弹出菜单（浏览器原生或自定义），选「修改名称」→ 行内切换为 `SessionRenameInline`，`PATCH` 成功后更新 Store 与列表。
+- **自动标题**：列表标题以后端写入的 `chat_sessions.title` 为准；流式结束后可 `sessionsAPI.list()` 刷新或依赖推送（若后端后续增加 SSE `session_title` 再扩展）。
+
+#### 6.2.7 登录／落地页（PRD v1.2 §2.2、§3.2）
+
+- **表单**：**名称**（必填）、**邮箱**（选填）；提交调用 `authAPI.login`。
+- **按钮**：提交后根据 **`is_new_user`** 区分成功反馈；**提交前**可调用 **`authAPI.profileExists`** 在失焦时预切换主按钮文案（`exists: false` →「开始吧」，`exists: true` →「欢迎回来」）。
+- **错误**：v1.2 下 **同名即登录**，一般不出现「名称被占用」错误；若接口返回 4xx，统一 toast 展示服务端文案。
+- **视觉**：背景可用 **深色渐变、微粒/网格动效、柔和光晕** 等（控制性能与可访问性对比度），体现 **AI / 未来感**，与 PRD §3.2 一致；避免干扰表单可读性。
+
 ---
 
 ## 7. 状态管理（Zustand）
@@ -352,12 +409,13 @@ interface UiState {
 | `/` | `Chat` | 需登录 | 对话首页 |
 | `/files` | `FileWorkspace` | 需登录 | 个人工作空间 |
 | `/settings` | `Settings` | 需登录 | 用户、**偏好**、AI 昵称 |
-| `/login` | `Login` | 未登录可访问 | 账号/令牌；**与 PRD 2.2 的关系见下** |
+| `/login` | `Login` | 未登录可访问 | **匿名昵称登录**（名称必填、邮箱选填、`authAPI.login`）；**科技感落地视觉**（§6.2.7） |
 
-### 8.2 新用户与 PRD「AI 主动询问姓名邮箱」
+### 8.2 新用户与 PRD「首轮对话补全资料」
 
-- **技术上前端仍需身份**（Token / 会话），`/login` 或等价流程负责建立身份。
-- **产品行为**：用户进入对话后，若后端/对话判定资料不全，由 **AI 在 Chat 内引导补全**（与 PRD一致）；**设置页**可作为补充入口。技术文档要求 Chat 页支持 **空资料态**（不阻塞进线，由 AI 发起询问）。
+- **技术上前端仍需身份**：`POST /api/auth/login` 签发 JWT；**邮箱可空**。
+- **产品行为**：用户进入某 **会话** 并发送首条消息后，若资料不全，由 **AI 在同一条首条助手回复中** 并列询问缺失项（PRD v1.2 §2.2-4）；**设置页**仍可补充邮箱。Chat 页 **不因缺邮箱阻塞进线**。
+- **会话维度**：`session_id` 由登录后 `GET/POST /api/sessions` 获得；**不得**在未拉取历史时假定消息数组为空即「无历史」（再登录场景须重新拉取，见 §4.2）。
 
 ### 8.3 路由守卫
 
@@ -442,7 +500,7 @@ interface UiState {
     │   │   └── guards.ts      # RequireAuth 等逻辑（可与 components/auth 复用）
     │   ├── pages/
     │   │   ├── Chat/
-    │   │   │   └── index.tsx  # 对话首页（懒加载入口）
+    │   │   │   └── index.tsx  # 主区单列对话 + sessionId 驱动拉取历史
     │   │   ├── Files/
     │   │   │   └── FileWorkspace.tsx
     │   │   ├── Settings/
@@ -452,16 +510,20 @@ interface UiState {
     │   ├── components/        # 见 §6.1 完整树
     │   ├── hooks/
     │   │   ├── useChatStream.ts
+    │   │   ├── useSessions.ts
     │   │   ├── useTasks.ts
     │   │   ├── useFiles.ts
     │   │   └── useFileUpload.ts
     │   ├── api/
-    │   │   ├── client.ts      # request、apiUrl、413/401 处理
+    │   │   ├── client.ts      # request、apiUrl、413/401 及通用 4xx 处理
+    │   │   ├── auth.ts
+    │   │   ├── sessions.ts
     │   │   ├── user.ts
     │   │   ├── tasks.ts
     │   │   └── files.ts
     │   ├── store/
     │   │   ├── userStore.ts
+    │   │   ├── chatSessionStore.ts  # 可选：sessions、activeSessionId
     │   │   └── uiStore.ts
     │   ├── lib/
     │   │   ├── chat-stream.ts # SSE 解析、事件归并到消息或 Store
@@ -487,13 +549,13 @@ interface UiState {
 |----------|------|----------|
 | **单元测试** | Vitest | SSE 解析、上传状态机、64MB 校验 |
 | **组件测试** | RTL | Message + Citation、FileCard processed 态 |
-| **E2E** | Playwright | 对话、分片上传、tags、设置 preferences |
+| **E2E** | Playwright | 匿名登录（新/回访）、会话切换与历史、右键重命名、对话流、分片上传、tags、设置 preferences |
 
 ---
 
 ## 15. 总结
 
-本方案以 **React + TypeScript + Vite + Tailwind** 实现 PRD v1.1 所需对话、工作空间、任务与个性化能力；**流式层与文件 API 与后端 `tech_design_ai_bot_v1_2.md` §5 对齐**，通过 **SSE 扩展事件**满足搜索/RAG 悬停展示。实现时若后端字段或事件有变更，应**以仓库内后端设计与 OpenAPI（若有）为单一事实来源**并同步调整前端类型与 Hook。
+本方案以 **React + TypeScript + Vite + Tailwind** 实现 **PRD v1.2** 对话布局（DeepSeek 式主区 + 可折叠会话列表）、匿名登录与 **session 维度历史**；**流式层、§5.0/5.1.1 会话 API、文件 API** 与后端 `tech_design_ai_bot_v1_2.md` 对齐，**SSE 扩展事件**满足搜索/RAG 悬停展示。实现时若后端字段或事件有变更，应**以仓库内后端设计为单一事实来源**并同步调整前端类型与 Hook。
 
 ---
 

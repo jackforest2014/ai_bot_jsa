@@ -13,8 +13,11 @@ Cloudflare Workers + Hono + TypeScript。已完成 **1.1–1.5**、**2.1–2.5**
 2. **迁移**：
    - 本地：`npm run db:apply:local`
    - 远程：`npm run db:apply:remote`
-3. **本地前端联调（避免 `/api/user`、`/api/tasks` 401）**  
-   API 将 `Authorization: Bearer <token>` 中的 `<token>` 当作 **D1 `users.id`** 解析；不存在则返回「未授权」。首次本地开发请执行 **`npm run db:seed:dev-user`**，写入 `local-dev-user`；前端登录页使用「本地开发一键登录」或在令牌框粘贴 `local-dev-user`。
+3. **开发用户 `local-dev-user`（避免 `/api/user` 401）**  
+   API 将 `Authorization: Bearer <token>` 中的 `<token>` 当作 **D1 `users.id`** 解析；**该 id 必须在当前连接的那份 D1 里存在**，否则返回「未授权」。
+   - **本地** D1：`npm run db:seed:dev-user`
+   - **远程**（已部署的 Worker 用的那份）D1：`npm run db:seed:dev-user:remote`（需已登录 wrangler、且 `wrangler.toml` 里 `database_id` 正确）  
+   前端「一键登录」或粘贴令牌 `local-dev-user` 均依赖上述 seed。仅 seed 本地时，**线上 Worker 仍会 401**。
 4. **R2（对象存储，非数据库）**
    - 在 Cloudflare Dashboard 创建 bucket，名称与 `wrangler.toml` 中 `bucket_name` 一致（默认 `task-assistant-files`）。
    - 取消 `[[r2_buckets]]` 三行注释并 `wrangler deploy`。未创建 bucket 前**保持注释**，否则部署可能失败。
@@ -48,7 +51,7 @@ Cloudflare Workers + Hono + TypeScript。已完成 **1.1–1.5**、**2.1–2.5**
 9. **大模型 LLM（Gemini 或通义千问）**  
    - **切换**：`wrangler.toml` `[vars]` 的 **`LLM_PROVIDER`**：`gemini` 或 **`qwen`**（亦识别 `dashscope`）。对话 / 嵌入模型名分别用 **`LLM_MODEL`**、**`EMBEDDING_MODEL`**；**向量维度须与 `EMBEDDING_DIMENSIONS` 及 Qdrant `memory` collection 一致**。  
    - **Gemini**：[Google AI Studio](https://aistudio.google.com/apikey) 创建 API Key → `.dev.vars` 的 **`GEMINI_API_KEY`**；生产：`npx wrangler secret put GEMINI_API_KEY`。嵌入常用 `text-embedding-004`（768）。  
-   - **千问（百炼 OpenAI 兼容）**：在阿里云百炼获取 **API Key** → `.dev.vars` 的 **`DASHSCOPE_API_KEY`**（仅密钥本身，勿写 `Bearer ` 前缀）。默认 **`DASHSCOPE_BASE_URL`** 为中国大陆 `https://dashscope.aliyuncs.com/compatible-mode/v1`；新加坡/美东等见 [OpenAI 兼容说明](https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope)。对话常用 `qwen-plus` / `qwen-turbo`；嵌入常用 **`text-embedding-v3`**，代码会按 **`EMBEDDING_DIMENSIONS`** 传 `dimensions`（如 768）以匹配已有 Qdrant collection。  
+   - **千问（百炼 OpenAI 兼容）**：在阿里云百炼获取 **API Key** → 本地 `.dev.vars` 的 **`DASHSCOPE_API_KEY`**；**已部署的 Worker** 必须执行 **`npx wrangler secret put DASHSCOPE_API_KEY`**（与本地同一把 key 即可，勿写 `Bearer ` 前缀）。若密钥地域非国内，另在 Dashboard **Workers** → 该 Worker → **Settings → Variables** 增加 **`DASHSCOPE_BASE_URL`**（或本地用 `.dev.vars` 测通后再同步到线上变量）。默认 Base 为中国大陆 `https://dashscope.aliyuncs.com/compatible-mode/v1`；国际见 [OpenAI 兼容说明](https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope)。对话常用 `qwen-plus` / `qwen-turbo`；嵌入常用 **`text-embedding-v3`**，代码会按 **`EMBEDDING_DIMENSIONS`** 传 `dimensions`（如 768）以匹配已有 Qdrant collection。  
    - 若日志出现 **DashScope 401**：多为密钥错误或 **密钥地域与 BASE_URL 不一致**（国内 key 配国内域名，国际 key 配 `dashscope-intl.aliyuncs.com`）；改 `.dev.vars` 后需 **重启** `wrangler dev`。  
    - 验证：`GET /health/llm`（`configured: true`，响应含 **`provider`**：`gemini` | `qwen`）。
 10. **长期记忆（任务 2.2）**  
@@ -96,6 +99,7 @@ Cloudflare Workers + Hono + TypeScript。已完成 **1.1–1.5**、**2.1–2.5**
 | `npm run db:apply:local`  | 对**本地** D1 执行迁移     |
 | `npm run db:apply:remote` | 对**远程** D1 执行迁移     |
 | `npm run db:seed:dev-user` | 向**本地** D1 插入 `local-dev-user`（前端 Bearer / 一键登录） |
+| `npm run db:seed:dev-user:remote` | 向**远程** D1 插入同上（Pages 连线上 Worker 一键登录前必做） |
 | `npm run qdrant:ensure-collection` | 确保 Qdrant 中 `memory` collection 存在（Cosine、维度见 `EMBEDDING_DIMENSIONS`） |
 | `npm run typecheck`       | TypeScript 检查            |
 | `npm run lint`            | ESLint                     |

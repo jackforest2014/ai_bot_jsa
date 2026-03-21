@@ -1,6 +1,6 @@
 ## 项目开发任务列表（按时间顺序）
 
-本文档基于 [后端技术设计方案 `tech_design_ai_bot_v1_2.md`](../technical/tech_design_ai_bot_v1_2.md)（文档版本至 **1.3**，对齐 **PRD v1.1**）拆解开发任务，按阶段组织。任务粒度以 1 小时为单位，便于进度跟踪。可并行执行的任务放在同一阶段内并列列出。
+本文档基于 [后端技术设计方案 `tech_design_ai_bot_v1_2.md`](../technical/tech_design_ai_bot_v1_2.md)（文档版本至 **1.4**，对齐 **PRD v1.1 / v1.2**）拆解开发任务，按阶段组织。任务粒度以 1 小时为单位，便于进度跟踪。可并行执行的任务放在同一阶段内并列列出。
 
 **与技术方案一致的优先级约定**：`projects` 任务分组、**TOT/GOT** 为 **PRD 外可选**（建议 feature flag）；验收以 PRD v1.1 为准时，可先交付必选能力再打开可选模块。
 
@@ -64,8 +64,8 @@
 - 实现 `ToolRegistry` 类：注册工具、获取工具定义、执行工具调用。
 - **`SearchTool`**：调用 Serper，**type 枚举与方案一致**（organic, news, images, videos, places, shopping, scholar, patents）；集成 **`SerperUsageRepository` / SerperQuotaService**：成功调用后递增 `serper_usage`，超软上限时友好提示（技术方案 §14）。
 - **`WorkspaceFilesTool`（`manage_workspace_files`）**：封装列表/删除/重命名/更新语义类型/标签，内部调用 `FileService.handleToolAction`，严禁越权。
-- 编写 **`UserTool`**（若方案中独立存在）或与用户更新逻辑对齐的工具；**`plan_research`** 可在阶段三与 PlannerService 一并注册。
-- **落地**：`src/serper/*`、`src/files/file-service.ts`、`search` / `manage_workspace_files` / `update_user_profile`；`SERPER_DAILY_SOFT_LIMIT`；`GET /health/serper`；`plan_research` 仍留待阶段三。
+- 编写 **`UserTool`**（若方案中独立存在）或与用户更新逻辑对齐的工具；**`plan_research`** 可在阶段四与 PlannerService 一并注册。
+- **落地**：`src/serper/*`、`src/files/file-service.ts`、`search` / `manage_workspace_files` / `update_user_profile`；`SERPER_DAILY_SOFT_LIMIT`；`GET /health/serper`；`plan_research` 仍留待阶段四。
 
 ##### 任务 2.4：Prompt 模板管理模块（3h）✅
 - 实现 `PromptRepository`，提供增删改查方法。
@@ -110,21 +110,79 @@
 
 ---
 
-### 阶段三：高级功能实现（预计总工时：29h）
+### 阶段二交付与阶段三的衔接：存量实现变更范围
+
+**说明**：上文 **阶段一、阶段二** 的任务条目**不因 PRD v1.2 而回溯修改**，仍表示各阶段当时的规划与验收口径。对齐技术方案 **v1.4** 时，**已在仓库中落地的代码与数据模型需要增量修改**；下列变更**不单独成阶段**，工时已计入下方 **阶段三任务 3.1～3.6**（实现时按表中「主要落入任务」执行即可）。
+
+| 原阶段 / 任务 | 已有交付物（概要） | 为 v1.4 需做的增量 | 主要落入阶段三任务 |
+|---------------|-------------------|---------------------|-------------------|
+| **阶段一 · 1.2** | `migrations/*`、`db/schema.ts`、`ConversationRepository` 等 | 新迁移：`chat_sessions`、`conversations.session_id`、`users` 约束（name 唯一、email 可空）；**Drizzle 与迁移对齐**；扩展 **`ConversationRepository`**（按会话查历史、插入带 `session_id`）；新增 **`SessionRepository`** | **3.1** |
+| **阶段二 · 2.6** | `ChatService` 流式、`listRecentForUser` 混排全用户消息 | 请求体 **`session_id`**、**会话归属校验**；短期上下文改为 **按 `session_id` 过滤**；落库写入 **`session_id`** | **3.4** |
+| **阶段二 · 2.6 + 2.4** | 系统提示与模板变量 | **首轮资料缺口**（`PROFILE_GAPS` 等）、**首 assistant 回合**判定 | **3.5**（模板变量可与 **2.4** 既有 `PromptService` 扩展配合） |
+| **阶段二 · 2.8** | `GET/PUT /api/user`、`email` 非空等校验 | **`email` 可空**、**`name` 唯一**相关的 PUT 规则与冲突响应（§5.2） | **3.6** |
+| **阶段二 · 鉴权**（各路由共用的 `requireUserFromBearer`） | Bearer = `users.id` 明文 | **JWT**（`sub=user.id`）与 **开发用令牌**兼容策略；全站统一解析入口 | **3.2** |
+| **阶段二 · 2.1 / 2.2 / 2.3 / 2.5 / 2.7 / 2.9** | LLM、Memory、Tool、Intent、Task、File | **无强制结构性变更**（记忆仍可按 `user_id`；工具上下文可后续再扩 `session_id`） | — |
+
+**建议实现顺序**：先 **3.1**（库表 + Repository + `schema.ts`）→ **3.2**（鉴权）→ **3.3**（会话 API）→ **3.4 / 3.5**（流式与标题、首轮 Prompt）→ **3.6**（用户 API 契约）；与 **3.3** 可部分并行的是 **3.2**（定好 Bearer 契约后各路由才能一致升级）。
+
+---
+
+### 阶段三：PRD v1.2 认证与多会话（技术方案 v1.4 §4.4 / §5.0 / §5.1 / §5.1.1 / §8.1）（预计总工时：28h）
+
+> 对应技术方案变更：**`chat_sessions` 多会话**、`conversations.session_id`、**匿名昵称登录**与 **JWT**、**会话历史 API**、流式 **`session_id` 校验**、**首轮资料缺口 Prompt**、**流式结束后自动标题** 与 **PATCH 重命名**；迁移 **0008** 及存量回填策略见技术方案 §4.4。  
+> **对阶段一、二已交付代码的修改范围**见上一节 **「阶段二交付与阶段三的衔接」**，由本阶段 **3.1～3.6** 覆盖，**不**要求回头改写阶段一、二任务列表正文。
+
+#### 并行任务组 C1（可并行执行，总工时：14h）
+
+##### 任务 3.1：D1 迁移 `0008` 与会话/用户模型对齐（4h）
+- 按技术方案 **§4.4 迁移 0008**（文件名在技术方案中为 `0008_chat_sessions_and_messages.sql`；若仓库 `migrations/` 已占用同编号，**顺延新文件编号**，语义与方案一致即可）：创建 **`chat_sessions`**（含 `title`、`title_source` 等）；为 **`conversations`** 增加 **`session_id`** 外键；**`users.name` 唯一**、**`email` 可空**（处理存量重复名、email NOT NULL 等一次性步骤）。
+- **存量回填**：每 `user_id` 至少一条默认会话，历史消息 **`session_id`** 指向该会话，避免再登录后历史空白（与方案说明一致）。
+- 实现 **`SessionRepository`**（或等价层）：按用户列会话、创建会话、更新标题与 `title_source`、按会话分页读消息（与 §5.1.1 对齐）。
+- **同步阶段一已交付物**：更新 **`db/schema.ts`（Drizzle）** 与 **`ConversationRepository`**（增加按 **`session_id`** 的查询/插入路径；替代或废弃仅按 `user_id` 混排历史的用法，见衔接表）。
+
+##### 任务 3.2：认证模块与 JWT（5h）
+- **`POST /api/auth/login`**：请求体 `name`、可选 `email`；**注册与登录合一**；同名即登录存量用户 **`is_new_user: false`**，新用户 **`true`**；响应 **`token`（JWT，`sub=user.id`）** 与 **`user`** 对象（技术方案 **§5.0**）。
+- 可选 **`GET /api/auth/profile-exists?name=`** → `{ exists }`，不签发 token。
+- 与现有受保护路由统一：**Bearer 解析为 JWT**（或方案允许的兼容策略），与 **`local-dev-user` 等开发令牌**策略在 README/实现上约定一致。
+
+##### 任务 3.3：会话 REST API（5h）
+- **`GET /api/sessions`**：当前用户会话列表，按 **`updated_at` 降序**（§5.1.1）。
+- **`POST /api/sessions`**：创建空会话（默认标题如「新对话」）；可与前端「先发消息再懒创建」二选一，但与 **`session_id` 校验**一致。
+- **`GET /api/sessions/:sessionId/messages?cursor=&limit=`**：分页消息，**`created_at` 升序**，供进入会话与再登录恢复（§5.1.1）。
+- **`PATCH /api/sessions/:sessionId`**：重命名；成功后 **`title_source = 'user'`**，避免自动标题覆盖（§5.1.1）。
+- 可选 **`DELETE /api/sessions/:sessionId`**：按产品策略软删/硬删会话及消息。
+
+#### 并行任务组 C2（可并行执行，总工时：14h）
+
+##### 任务 3.4：`POST /api/chat/stream` 与会话绑定及历史加载（6h）
+- 请求体 **必填 `session_id`**（UUID）；**校验会话属于当前用户**，否则 **403/404**（§5.1）。
+- **持久化**：用户消息与 assistant 回复写入 **`conversations`** 时带 **`session_id`**（及既有 `intention` / `prompt_id` / `keywords` / `conversation_id` 等）。
+- **短期上下文**：**改写阶段二已交付的 `ChatService`**：构建历史时 **仅按 `session_id` 过滤**（不再使用「全用户最近 N 条」混排），最近 N 轮策略与技术方案 **§8.2.1、§9.7** 一致；**不依赖 Worker 内存**，再登录从 D1 恢复。
+
+##### 任务 3.5：首轮资料缺口 Prompt 与会话自动标题（5h）
+- **首轮助手回合**：根据会话内是否已有 **`role=assistant`** 判定 **`isFirstAssistantTurn`**；在 system/指令中注入 **`PROFILE_GAPS`**（可空 `email`、称呼等），要求助手在**首条用户消息之后的首条回复**中自然询问缺失项，已齐全则不重复盘问（技术方案 **§8.1**、PRD 2.2–4）。
+- **自动标题**：流式结束后，若本会话刚完成 **首条 user + 首条 assistant** 成对写入，且 **`title_source = 'auto'`**，则异步 **标题生成**（轻量 LLM 或用户首句规则摘要）并 **`UPDATE chat_sessions`**；**`title_source = 'user'`** 时跳过（§5.1）。
+
+##### 任务 3.6：`/api/user` 与匿名用户契约（3h）
+- **`GET/PUT /api/user`** 响应与请求体与技术方案 **§5.2** 一致：**`email` 可为 `null`**、`preferences` 与 `preferences_json` 映射；**`name` 全库唯一**后的更新规则与错误码（如重复名）与方案/PRD 对齐。
+
+---
+
+### 阶段四：高级功能实现（预计总工时：29h）
 
 #### 并行任务组 C（可并行执行，总工时：13h）
 
-##### 任务 3.1：子代理规划模块 PlannerService（4h）
+##### 任务 4.1：子代理规划模块 PlannerService（4h）
 - 实现 `PlannerService.planAndExecute`：生成子任务列表（调用 LLM）。
 - 实现 `SubAgent` 类：执行单个子任务（可调用工具）。
 - 集成到 `ChatService`，当用户请求「深度研究」时触发；**内部搜索调用同样走 Serper 用量计数与软上限**（与技术方案一致）。
 
-##### 任务 3.2：TOT/GOT 高级推理工具（4h，**可选 / PRD 外**）
+##### 任务 4.2：TOT/GOT 高级推理工具（4h，**可选 / PRD 外**）
 - 实现 `TotTool`：构建思考树，评估选择最优分支。
 - 实现 `GotTool`：构建思考图，迭代优化。
 - 注册到 `ToolRegistry`，由 LLM 按需调用；**默认建议 feature flag 关闭**，避免 token 与延迟超预期（技术方案 §9.4）。
 
-##### 任务 3.3：文件异步处理与 RAG 集成（5h）
+##### 任务 4.3：文件异步处理与 RAG 集成（5h）
 - 实现 `FileProcessor` / `file-parser`：**按技术方案 §4.5 分 MIME 策略**——PDF/Word/文本向量化；Excel 文本提取（行数上限可配置）；图片可选 OCR；**音视频不向量化、仅元数据**；失败时 `processed = -1`。
 - 异步将可索引文本分块，调用 LLM 生成向量，存入 Qdrant（payload 含 **file_id、semantic_type、folder_path、tags**）。
 - 在 FileService 上传完成后触发后台任务。
@@ -132,69 +190,71 @@
 
 #### 并行任务组 D（可并行执行，总工时：16h）
 
-##### 任务 3.4：API 路由整合与中间件（5h）
-- 实现 `/api/chat/stream` 路由，集成 SSE 流式响应（**含 `tool_result_meta`、`citation` 事件**）。
+##### 任务 4.4：API 路由整合与中间件（5h）
+- 汇总 **`/api/auth/*`**、**`/api/sessions/*`**（若阶段三已拆文件，此处做网关/导出与 CORS/校验一致性检查）与既有路由。
+- 实现 `/api/chat/stream` 路由，集成 SSE 流式响应（**含 `tool_result_meta`、`citation` 事件**；**`session_id` 以阶段三为准**）。
 - 实现 `/api/files/*`：**列表、小文件上传、initiate-multipart、complete-multipart**、删除、重命名、**PUT `/api/files/:id/tags`**、语义类型、下载（与技术方案 §5.4 对齐）。
 - 实现 `/api/prompts/*` 管理路由（管理员）。
 - 添加 CORS 中间件、错误处理中间件、请求日志。
 - 使用 Zod 验证请求体。
 
-##### 任务 3.5：文件上传与异步处理联调（4h）
+##### 任务 4.5：文件上传与异步处理联调（4h）
 - **后端**：分片上传以 **R2 预签名 URL + 前端 XHR 进度** 为主（技术方案 §12）；异步处理完成后更新 D1 `processed` 与 Qdrant；可选补充管理端查询处理状态接口（若产品需要）。
 - 与前端联调：占位节点、进度条、成功/失败/重试；**不强制**后端 SSE 推送上传字节进度。
 
-##### 任务 3.6：对话流式与引用数据联调（4h）
+##### 任务 4.6：对话流式与引用数据联调（4h）
 - 联调 SSE：`tool_result_meta`、`citation` 与前端富文本 **`<rag>` / 搜索来源悬停**（以后端契约为准；前端实现见前端任务列表）。
 - 验证工具调用与最终 assistant 正文中的引用标记一致。
 
-##### 任务 3.7：工作空间 API 与路径/标签（3h）
+##### 任务 4.7：工作空间 API 与路径/标签（3h）
 - 验证 `GET /api/files?folder=` 与 `folder_path` 前缀匹配行为。
 - 联调 **标签**（含对话 **`manage_workspace_files` → set_tags**）与列表展示。
 
 ---
 
-### 阶段四：测试与优化（预计总工时：18h）
+### 阶段五：测试与优化（预计总工时：18h）
 
 #### 并行任务组 E（可并行执行，总工时：18h）
 
-##### 任务 4.1：单元测试（8h）
+##### 任务 5.1：单元测试（8h）
 - 为核心模块编写单元测试（使用 Vitest）：
   - LLMProvider 模拟测试
   - ToolRegistry 注册与执行（**含 SearchTool 配额逻辑、WorkspaceFilesTool 权限**）
   - MemoryService 检索逻辑（**含过滤条件**）
   - Prompt 模板渲染（**preferences**）
-  - ChatService 循环逻辑与 **SSE 事件构造**（可测序列）
+  - ChatService 循环逻辑与 **SSE 事件构造**（可测序列）；**按 `session_id` 加载历史**、**首轮资料缺口**分支（阶段三交付后补测）
   - IntentClassifier 规则匹配（**workspace_operation**）
   - SerperUsageRepository / 软上限
   - FileProcessor 分 MIME 分支（至少 PDF 与「跳过向量化」类型）
+  - **AuthService / JWT 签发与校验**、**SessionRepository**、**会话归属校验**（与阶段三对齐）
 
-##### 任务 4.2：集成测试与端到端测试（6h）
-- 编写集成测试，模拟完整对话流程（含 **search、manage_workspace_files、任务 detail_json**）。
-- 使用 Playwright 进行端到端测试（用户登录 → 对话 → 任务管理 → 文件上传 → RAG 检索）。
+##### 任务 5.2：集成测试与端到端测试（6h）
+- 编写集成测试，模拟完整对话流程（含 **search、manage_workspace_files、任务 detail_json**）；**匿名登录 / JWT**、**多会话创建与切换**、**再登录后历史恢复**（阶段三契约）。
+- 使用 Playwright 进行端到端测试（**登录** → **选会话** → 对话 → 任务管理 → 文件上传 → RAG 检索）。
 
-##### 任务 4.3：性能优化与监控（4h）
+##### 任务 5.3：性能优化与监控（4h）
 - 分析冷启动时间，优化全局代码（避免重计算）。
 - 添加埋点（LLM 调用耗时、工具调用成功率、文件上传时间、**search_executed / serper 计数**）。
 - 设置日志和监控（wrangler tail 集成）。
 
 ---
 
-### 阶段五：部署与文档（预计总工时：10h）
+### 阶段六：部署与文档（预计总工时：10h）
 
 #### 并行任务组 F（可并行执行，总工时：10h）
 
-##### 任务 5.1：生产环境配置与部署（3h）
+##### 任务 6.1：生产环境配置与部署（3h）
 - 创建生产环境 D1 和 R2 资源。
 - 设置环境变量（Secrets）。
 - 配置自定义域名（可选）。
 - 执行部署脚本，验证生产环境功能。
 
-##### 任务 5.2：API 文档与用户手册（4h）
-- 编写 API 接口文档（Swagger/OpenAPI 格式），**包含 SSE 事件类型与示例**。
+##### 任务 6.2：API 文档与用户手册（4h）
+- 编写 API 接口文档（Swagger/OpenAPI 格式），**包含 SSE 事件类型与示例**；**补充 `/api/auth/*`、`/api/sessions/*`**、**`POST /api/chat/stream` 的 `session_id`** 等阶段三契约。
 - 编写用户使用手册（功能介绍、常见问题）。
 - 更新 README。
 
-##### 任务 5.3：压力测试与容量规划（3h）
+##### 任务 6.3：压力测试与容量规划（3h）
 - 使用 k6 或 wrangler 的负载测试功能，模拟并发用户。
 - 分析 CPU 时间、内存使用、子请求限制，确保在免费额度内。
 
@@ -206,19 +266,21 @@
 |------|------|
 | 阶段一：基础环境与脚手架搭建 | 11h |
 | 阶段二：核心服务实现 | 40h |
-| 阶段三：高级功能实现 | 29h |
-| 阶段四：测试与优化 | 18h |
-| 阶段五：部署与文档 | 10h |
-| **总计** | **108h** |
+| 阶段三：PRD v1.2 认证与多会话 | 28h |
+| 阶段四：高级功能实现 | 29h |
+| 阶段五：测试与优化 | 18h |
+| 阶段六：部署与文档 | 10h |
+| **总计** | **136h** |
 
-按每日有效工作 6 小时计算，约需 **18 个工作日**（不含并行优化）。并行任务可多人同时进行，实际交付周期可缩短。
+按每日有效工作 6 小时计算，约需 **23 个工作日**（不含并行优化）。并行任务可多人同时进行，实际交付周期可缩短。
 
 ---
 
 ## 并行执行建议
 
 - **阶段二** 中，任务组 A（LLM Provider、MemoryService、ToolRegistry、Prompt 管理、IntentClassifier）可由 2 人并行开发，组 B（ChatService、任务管理、用户管理、文件管理）由另 2 人并行，总计 4 人可在 2～3 天内完成（视 WorkspaceFilesTool / SSE 引用块复杂度略增）。
-- **阶段三** 中，**3.2（TOT/GOT）可整组后置或单独分支**，不阻塞 PRD v1.1 验收路径。
-- **阶段四** 和 **阶段五** 可在功能开发的同时并行进行。
+- **阶段三** 与 **阶段四** 部分可衔接：**多会话与 JWT 落地后**（参见文前 **「阶段二交付与阶段三的衔接」** 表），阶段四的 Planner / 文件异步与联调才能完整覆盖「再登录 + 按会话历史」路径。
+- **阶段四** 中，**4.2（TOT/GOT）可整组后置或单独分支**，不阻塞 PRD v1.1 验收路径。
+- **阶段五** 和 **阶段六** 可在功能开发的同时并行进行。
 
 此任务列表可根据实际团队配置灵活调整，确保每个任务粒度可追踪。
