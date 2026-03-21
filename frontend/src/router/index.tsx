@@ -1,0 +1,32 @@
+import { lazy, Suspense } from 'react'
+import { Navigate, Route, Routes } from 'react-router-dom'
+
+import RequireAuth from '@/components/auth/RequireAuth'
+import AppShell from '@/components/layout/AppShell'
+
+const ChatPage = lazy(() => import('@/pages/Chat/index'))
+const FileWorkspace = lazy(() => import('@/pages/Files/FileWorkspace'))
+const SettingsPage = lazy(() => import('@/pages/Settings/index'))
+const LoginPage = lazy(() => import('@/pages/Login/index'))
+
+function RouteFallback() {
+  return <div className="flex min-h-[40vh] items-center justify-center text-slate-500">加载中…</div>
+}
+
+export default function AppRouter() {
+  return (
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route element={<RequireAuth />}>
+          <Route path="/" element={<AppShell />}>
+            <Route index element={<ChatPage />} />
+            <Route path="files" element={<FileWorkspace />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
+  )
+}
