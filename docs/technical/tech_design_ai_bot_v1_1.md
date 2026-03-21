@@ -3,7 +3,7 @@
 ## 文档版本
 | 版本 | 日期 | 作者 | 变更说明 |
 |------|------|------|----------|
-| 1.0 | 2026-03-21 | AI Assistant | 初稿完成（包含完整技术选型、架构、实现细节） |
+| 1.0 | 2026-03-21 | AI Assistant | 初稿完成（包含完整技术选型、架构、实现细节、LLM调用设计） |
 
 ---
 
@@ -48,7 +48,7 @@
 在 Agent 实现方式上，我们决定 **不引入 LangChain/LangGraph 等现成框架**，而是采用轻量自研方案。理由如下：
 
 1. **架构哲学**：将智能交给模型，将确定性交给基础设施。当模型足够强大时，硬编码的 chain 或 graph 反而成为障碍。决策权在 LLM 而非代码，新模型发布时能力自动增强。
-2. **Cloudflare Workers 环境约束**：包体积限制（1MB）和冷启动要求极低的框架开销。LangChain.js 等框架即使压缩后也可能超限，且增加启动延迟。
+2. **Cloudflare Workers 环境约束**：包体积限制（免费 3 MB，付费 10 MB）和冷启动要求极低的框架开销。LangChain.js 等框架即使压缩后也可能占 2 MB 以上，而自研核心代码不足 500 KB，留足扩展空间。
 3. **框架实际价值有限**：框架主要提供 LLM 接口统一、工具预置和 ReAct 循环脚手架，但这些都可以用少量代码自行实现。框架解决不了规划、错误恢复、上下文管理等核心难题。
 4. **MCP 标准正削弱框架价值**：工具方直接提供 MCP Server，模型直接返回结构化 `tool_call`，框架的集成价值下降。
 5. **可控性与可观测性**：自研实现使每一步逻辑透明，便于调试和定制化。
@@ -353,7 +353,7 @@ export interface LLMResponse {
 }
 
 export interface LLMProvider {
-  chat(messages: LLMMessage[], tools?: ToolDefinition[]): Promise<LLMResponse>;
+  chat(messages: LLMMessage[], tools?: ToolDefinition[]): Promise<LLMResponse & { usage: TokenUsage }>;
   streamChat(messages: LLMMessage[], tools?: ToolDefinition[]): ReadableStream;
   embed(text: string): Promise<number[]>;
 }
@@ -364,7 +364,7 @@ export interface LLMProvider {
 export class GeminiProvider implements LLMProvider {
   constructor(private apiKey: string, private model: string = 'gemini-2.0-flash-lite') {}
   async chat(messages: LLMMessage[], tools?: ToolDefinition[]) {
-    // 转换消息格式，调用 Gemini API
+    // 转换消息格式，调用 Gemini API，解析 usageMetadata 并返回
   }
   // ...
 }
@@ -422,11 +422,254 @@ const user = await db.select().from(users).where(eq(users.email, email));
 
 ---
 
-## 7. Agent 实现原理与无框架方案设计
+## 7. LLM 调用核心设计
+
+### 7.1 Prompt 设计
+
+Prompt 是控制 LLM 行为的关键。本项目采用 **动态构建 + 模板管理** 的方式，确保提示词清晰、可控且易于调整。
+
+#### 7.1.1 系统提示词（System Prompt）
+
+系统提示词定义了 AI 助手的角色、能力边界、行为规范以及可用工具。我们将其设计为可配置的模板，支持根据用户偏好（如 AI 昵称）动态替换。
+
+**模板示例**（存储在 D1 或环境变量中）：
+```markdown
+你是一个智能任务管理助手，昵称为“{{AI_NICKNAME}}”。你的职责是：
+1. 记住用户信息（姓名、邮箱），并在对话中自然称呼用户。
+2. 帮助用户管理任务列表（增删改查），支持通过自然语言对话完成操作。
+3. 当用户询问实时信息或需要外部知识时，调用 search 工具获取结果。
+4. 对于复杂研究任务，使用 plan_research 工具进行深度研究。
+5. 始终以友好、专业的语气回复。
+
+当前用户信息：
+- 姓名：{{USER_NAME}}
+- 邮箱：{{USER_EMAIL}}
+
+可用工具列表（以 JSON Schema 形式提供）：
+{{TOOLS_DEFINITIONS}}
+```
+
+**构建时机**：每次对话前，`ChatService` 从数据库读取用户信息和 AI 昵称，替换模板变量，并通过 `LLMProvider` 的 `chat` 或 `streamChat` 方法传递系统提示。
+
+#### 7.1.2 用户消息与工具调用消息的格式
+
+为保持与 OpenAI 函数调用格式兼容，我们统一使用以下消息结构：
+
+- **用户消息**：`{ role: "user", content: userInput }`
+- **助手消息（含工具调用）**：
+  ```json
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      { "id": "call_123", "type": "function", "function": { "name": "search", "arguments": "{\"query\":\"...\"}" } }
+    ]
+  }
+  ```
+- **工具响应消息**：
+  ```json
+  {
+    "role": "tool",
+    "tool_call_id": "call_123",
+    "content": "工具返回的 JSON 字符串"
+  }
+  ```
+
+#### 7.1.3 提示词模板管理
+
+使用轻量级模板引擎（如 `mustache` 或手写替换）实现模板渲染。模板存储在 D1 的 `prompt_templates` 表中，支持热更新。
+
+```typescript
+// src/utils/prompt.ts
+export function renderSystemPrompt(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] || '');
+}
+```
+
+### 7.2 Context 设计
+
+上下文由三部分构成：**系统提示**、**短期记忆（对话历史）**、**长期记忆（RAG 检索片段）**。
+
+#### 7.2.1 短期上下文（会话消息历史）
+
+- 存储：使用 `conversations` 表（可选）或内存数组（当前会话）。
+- 策略：保留最近 N 轮对话（默认 10 轮），避免超出模型上下文窗口。当历史超过限制时，可进行 **摘要压缩**（调用 LLM 生成摘要后替换早期消息）。
+
+#### 7.2.2 长期记忆（RAG 检索）
+
+在用户消息发送后，`MemoryService` 执行以下步骤：
+
+1. 将用户输入向量化（调用 `LLMProvider.embed`）。
+2. 在 Qdrant 中检索与 `user_id` 匹配且相似度 > 0.75 的 Top K（默认 3）个片段。
+3. 将检索到的片段格式化为上下文消息：
+   ```json
+   {
+     "role": "system",
+     "content": "相关历史记忆：\n- 片段1\n- 片段2"
+   }
+   ```
+4. 将该消息插入到系统提示与用户消息之间。
+
+#### 7.2.3 上下文窗口管理
+
+为防止超限，需计算当前构建的消息总 tokens 数（可使用 `tiktoken` 或模型 API 的 `countTokens` 方法）。若超出模型限制（如 Gemini 2.0 Flash Lite 上下文窗口为 1M tokens，基本不用担心，但仍可做防御），采取以下策略：
+- 优先保留系统提示和最新消息。
+- 丢弃最早的对话轮次。
+- 对检索到的记忆片段进行截断（每个片段限制 500 字符）。
+
+### 7.3 LLM 生成的评估
+
+为了确保回复质量，我们引入多层评估机制，既包括实时验证，也包括离线分析。
+
+#### 7.3.1 评估策略
+
+| 评估层级 | 触发时机 | 方法 | 示例 |
+|----------|----------|------|------|
+| **语法/格式校验** | 收到 LLM 响应后 | 正则匹配、JSON 解析 | 检查 tool_calls 的 `arguments` 是否为合法 JSON |
+| **工具调用有效性** | 执行工具前 | 校验参数是否完整、工具是否存在 | 若缺少必填参数，要求 LLM 重新生成 |
+| **答案相关性** | 最终回复返回前 | 规则 + 可选 LLM-as-Judge | 检测是否包含“我不知道”等低质量信号，可触发重试 |
+| **幻觉检测** | 离线（异步） | 事实校验、引用追溯 | 对于涉及外部事实的回复，可搜索验证 |
+
+#### 7.3.2 评估实现（代码片段）
+
+在 `ChatService` 中集成校验逻辑：
+
+```typescript
+private async validateResponse(response: LLMResponse, messages: LLMMessage[]): Promise<boolean> {
+  // 1. 工具调用参数校验
+  if (response.tool_calls) {
+    for (const call of response.tool_calls) {
+      try {
+        JSON.parse(call.arguments);
+      } catch {
+        console.warn(`Invalid JSON in tool call: ${call.arguments}`);
+        return false;
+      }
+    }
+  }
+  
+  // 2. 空回复检测
+  if (!response.content && (!response.tool_calls || response.tool_calls.length === 0)) {
+    return false;
+  }
+  
+  // 3. 可选：使用 LLM 评估相关性（仅当开启高可靠性模式）
+  if (this.shouldEvaluateQuality(response)) {
+    const quality = await this.evaluateWithLLM(messages, response);
+    if (quality.score < 0.7) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+```
+
+#### 7.3.3 离线评估与监控
+
+将用户反馈（如“点赞/点踩”）和对话日志存储到 D1，定期运行评估任务：
+- 使用 LLM-as-Judge 对历史对话进行质量评分。
+- 检测高频问题（如工具调用失败、重复回答）。
+- 生成报告供开发人员优化提示词或工具。
+
+### 7.4 Tokens 消耗与成本跟踪框架
+
+虽然当前使用免费 API，但框架需预留计费能力，并实时跟踪 tokens 消耗，以便未来切换付费模型或优化成本。
+
+#### 7.4.1 获取 Tokens 数据
+
+在 `LLMProvider` 实现中，从 API 响应头或响应体中提取 tokens 信息：
+
+**Gemini API** 返回结构包含 `usageMetadata`：
+```json
+{
+  "usageMetadata": {
+    "promptTokenCount": 123,
+    "candidatesTokenCount": 456,
+    "totalTokenCount": 579
+  }
+}
+```
+
+**OpenAI API** 类似，在 `response.usage` 中。
+
+我们在 `GeminiProvider.chat` 方法中解析并返回：
+
+```typescript
+async chat(messages: LLMMessage[], tools?: ToolDefinition[]): Promise<LLMResponse & { usage: TokenUsage }> {
+  const response = await fetch(...);
+  const data = await response.json();
+  return {
+    content: data.candidates[0].content.parts[0].text,
+    tool_calls: this.parseToolCalls(data),
+    usage: {
+      promptTokens: data.usageMetadata.promptTokenCount,
+      completionTokens: data.usageMetadata.candidatesTokenCount,
+      totalTokens: data.usageMetadata.totalTokenCount,
+    }
+  };
+}
+```
+
+#### 7.4.2 成本计算模型
+
+定义价格配置（支持多种模型）：
+
+```typescript
+// src/llm/pricing.ts
+export const MODEL_PRICING = {
+  'gemini-2.0-flash-lite': { input: 0, output: 0 },      // 免费
+  'gemini-2.0-flash': { input: 0.000000125, output: 0.000000375 }, // 示例：每 1k tokens 美元
+  'gpt-4o-mini': { input: 0.00000015, output: 0.0000006 },
+};
+
+export function calculateCost(model: string, usage: TokenUsage): number {
+  const pricing = MODEL_PRICING[model];
+  if (!pricing) return 0;
+  return (usage.promptTokens / 1000) * pricing.input + (usage.completionTokens / 1000) * pricing.output;
+}
+```
+
+#### 7.4.3 跟踪与上报
+
+在 `ChatService` 每次 LLM 调用后，将 usage 信息异步上报到埋点服务：
+
+```typescript
+private async trackTokenUsage(userId: string, model: string, usage: TokenUsage, cost: number) {
+  this.analytics.trackEvent('llm_usage', {
+    userId,
+    model,
+    promptTokens: usage.promptTokens,
+    completionTokens: usage.completionTokens,
+    totalTokens: usage.totalTokens,
+    estimatedCost: cost,
+    timestamp: Date.now(),
+  });
+}
+```
+
+#### 7.4.4 聚合统计与告警
+
+可定期（如每小时）从埋点数据中聚合各用户/总体的 tokens 消耗和成本，在控制台展示。若成本超过预设阈值（即使免费也需留意免费额度），可触发告警。
+
+### 7.5 总结
+
+本部分详细设计了 LLM 调用的核心环节：
+
+- **Prompt 设计**：采用模板化系统提示，动态注入用户信息和工具定义。
+- **Context 设计**：组合短期历史、长期记忆（RAG）和系统提示，并管理上下文窗口。
+- **评估机制**：多层校验确保回复质量，包括格式、工具、相关性，以及离线评估。
+- **成本跟踪**：完整记录 tokens 消耗，预留价格模型，支持未来切换付费模型。
+
+这些设计确保了 LLM 调用的可维护性、可观测性和成本可控性，为产品长期迭代打下基础。
+
+---
+
+## 8. Agent 实现原理与无框架方案设计
 
 本项目采用 **模型即编排** 的轻量自研 Agent 方案，核心逻辑位于 `ChatService`、`ToolRegistry`、`PlannerService` 和高级推理模块中。
 
-### 7.1 ReAct 循环实现
+### 8.1 ReAct 循环实现
 
 `ChatService.handleMessage()` 的核心是一个 while 循环，模拟 ReAct 模式：
 
@@ -470,7 +713,7 @@ async handleMessage(userId: string, userInput: string): Promise<LLMResponse> {
 }
 ```
 
-### 7.2 工具注册与调用
+### 8.2 工具注册与调用
 
 `ToolRegistry` 管理所有工具的定义和执行：
 
@@ -523,7 +766,7 @@ export class SearchTool implements Tool {
 }
 ```
 
-### 7.3 规划与子代理（深度研究）
+### 8.3 规划与子代理（深度研究）
 
 `PlannerService` 负责将复杂任务分解为子任务，并协调执行：
 
@@ -560,11 +803,11 @@ export class PlannerService {
 }
 ```
 
-### 7.4 高级推理模式：TOT / GOT 实现
+### 8.4 高级推理模式：TOT / GOT 实现
 
 为了支持更复杂的思考链（如多路径探索、回溯），我们设计了独立的 TOT/GOT 模块，并封装为特殊工具，供主 Agent 调用。
 
-#### 7.4.1 TOT（Tree of Thoughts）工具
+#### 8.4.1 TOT（Tree of Thoughts）工具
 
 `TotTool` 实现树状思考，允许模型生成多个思考分支，评估后选择最优路径：
 
@@ -604,7 +847,7 @@ export class TotTool implements Tool {
 }
 ```
 
-#### 7.4.2 GOT（Graph of Thoughts）工具
+#### 8.4.2 GOT（Graph of Thoughts）工具
 
 `GotTool` 实现图状思考，支持节点之间相互引用和组合：
 
@@ -633,7 +876,7 @@ export class GotTool implements Tool {
 }
 ```
 
-#### 7.4.3 与主 Agent 集成
+#### 8.4.3 与主 Agent 集成
 
 将 TOT/GOT 作为普通工具注册到 `ToolRegistry`，LLM 在需要时自行决定调用。例如，用户问“如何解决某个复杂技术难题”，LLM 可能选择调用 `tree_of_thoughts` 进行深度推理。
 
@@ -643,12 +886,12 @@ toolRegistry.register(new TotTool());
 toolRegistry.register(new GotTool());
 ```
 
-#### 7.4.4 性能与成本考虑
+#### 8.4.4 性能与成本考虑
 
 - 由于 TOT/GOT 会多次调用 LLM，可能显著增加 token 消耗和延迟。我们在工具内部设置 `maxDepth`、`maxBranches` 等限制，并在调用前通过系统提示告知 LLM 谨慎使用。
 - 对于深度思考场景，可考虑使用更轻量的模型（如 Gemini Flash）生成中间步骤，最终由主模型汇总。
 
-### 7.5 记忆与上下文管理
+### 8.5 记忆与上下文管理
 
 `MemoryService` 结合短期缓存和向量检索，为对话提供上下文：
 
@@ -677,7 +920,7 @@ export class MemoryService {
 
 ---
 
-## 8. 类图（Mermaid）
+## 9. 类图（Mermaid）
 
 ```mermaid
 classDiagram
@@ -770,9 +1013,9 @@ classDiagram
 
 ---
 
-## 9. 主要交互流程（Mermaid）
+## 10. 主要交互流程（Mermaid）
 
-### 9.1 简单对话流程（无工具调用）
+### 10.1 简单对话流程（无工具调用）
 
 ```mermaid
 sequenceDiagram
@@ -798,7 +1041,7 @@ sequenceDiagram
     Worker-->>Frontend: SSE data: done
 ```
 
-### 9.2 工具调用流程（以搜索为例）
+### 10.2 工具调用流程（以搜索为例）
 
 ```mermaid
 sequenceDiagram
@@ -822,7 +1065,7 @@ sequenceDiagram
     Frontend-->>User: 显示结果（含tool标记）
 ```
 
-### 9.3 深度研究流程（子代理规划）
+### 10.3 深度研究流程（子代理规划）
 
 ```mermaid
 sequenceDiagram
@@ -847,7 +1090,7 @@ sequenceDiagram
     Worker-->>Frontend: SSE 流式输出报告
 ```
 
-### 9.4 TOT 高级推理流程
+### 10.4 TOT 高级推理流程
 
 ```mermaid
 sequenceDiagram
@@ -874,7 +1117,7 @@ sequenceDiagram
     Worker-->>Frontend: SSE 流式输出
 ```
 
-### 9.5 文件上传与 RAG 处理流程
+### 10.5 文件上传与 RAG 处理流程
 
 ```mermaid
 sequenceDiagram
@@ -900,7 +1143,7 @@ sequenceDiagram
 
 ---
 
-## 10. 文件目录组织结构
+## 11. 文件目录组织结构
 
 ```
 backend/
@@ -917,6 +1160,7 @@ backend/
 │   ├── llm/                   # LLM 抽象层
 │   │   ├── LLMProvider.ts
 │   │   ├── GeminiProvider.ts
+│   │   ├── pricing.ts         # 价格配置与成本计算
 │   │   └── (future: OpenAiProvider.ts)
 │   ├── vector/                # 向量数据库抽象层
 │   │   ├── VectorStore.ts
@@ -945,7 +1189,8 @@ backend/
 │   │   ├── logger.ts
 │   │   ├── embeddings.ts      # 向量化辅助
 │   │   ├── sse.ts             # SSE 流式辅助
-│   │   └── errors.ts          # 错误处理
+│   │   ├── errors.ts          # 错误处理
+│   │   └── prompt.ts          # 提示词渲染
 │   └── types/                 # 全局类型定义
 │       ├── index.ts
 │       └── tool.ts
@@ -961,7 +1206,7 @@ backend/
 
 ---
 
-## 11. 异常处理策略
+## 12. 异常处理策略
 
 | 异常类型 | 处理方式 |
 |----------|----------|
@@ -985,7 +1230,7 @@ app.onError((err, c) => {
 
 ---
 
-## 12. 数据埋点设计
+## 13. 数据埋点设计
 
 埋点用于追踪功能使用情况和性能，采用异步 HTTP 请求上报到第三方分析服务。
 
@@ -1001,6 +1246,7 @@ app.onError((err, c) => {
 | `chat_response_time` | AI 响应完成 | user_id, duration_ms, tool_calls_count |
 | `export_generated` | 导出报告 | user_id, export_type, file_size |
 | `tot_invoked` | TOT 工具被调用 | user_id, depth, branch_factor, duration_ms |
+| `llm_usage` | LLM 调用后 | user_id, model, promptTokens, completionTokens, estimatedCost |
 
 **实现**：
 ```typescript
@@ -1010,7 +1256,7 @@ this.trackEvent('chat_response', { userId, duration, toolCalls: result.tool_call
 
 ---
 
-## 13. 性能描述与优化
+## 14. 性能描述与优化
 
 - **冷启动**：Cloudflare Workers 冷启动时间 < 50ms，可忽略。
 - **响应时间**：
@@ -1020,10 +1266,11 @@ this.trackEvent('chat_response', { userId, duration, toolCalls: result.tool_call
   - TOT/GOT 推理：取决于分支数和深度，可能增加 5-10 秒，需向用户显示“正在深度思考”。
 - **并发**：Workers 自动扩展，免费计划每日 10 万请求，足够原型使用。
 - **数据库优化**：D1 使用索引（user_id），Qdrant 使用 `user_id` 过滤检索，确保查询效率。
+- **Token 优化**：通过摘要压缩历史、截断 RAG 片段，控制输入 tokens 数量，降低成本和延迟。
 
 ---
 
-## 14. 安全与隐私
+## 15. 安全与隐私
 
 - **API 密钥**：存储在 `wrangler.toml` 的 `vars` 或 `secrets` 中，不暴露给客户端。
 - **CORS**：Hono 启用 `cors` 中间件，仅允许前端域名访问。
@@ -1034,15 +1281,15 @@ this.trackEvent('chat_response', { userId, duration, toolCalls: result.tool_call
 
 ---
 
-## 15. 部署 Cloudflare Workers 流程
+## 16. 部署 Cloudflare Workers 流程
 
-### 15.1 前置准备
+### 16.1 前置准备
 - 注册 Cloudflare 账号
 - 安装 Node.js 18+ 和 npm
 - 安装 Wrangler CLI：`npm install -g wrangler`
 - 登录 Cloudflare：`wrangler login`
 
-### 15.2 配置 wrangler.toml
+### 16.2 配置 wrangler.toml
 ```toml
 name = "ai-task-assistant"
 main = "src/index.ts"
@@ -1067,9 +1314,10 @@ LLM_MODEL = "gemini-2.0-flash-lite"
 [env.production]
 vars = { GEMINI_API_KEY = "prod-key", ... }
 ```
+
 > 开启 `nodejs_compat` 后，可直接使用 Cloudflare 内置的 Node.js 核心 API（如 `Buffer`、`EventEmitter`），这些 API 不计入 Worker 体积，有助于进一步缩小最终 bundle。
 
-### 15.3 初始化 D1 数据库
+### 16.3 初始化 D1 数据库
 ```bash
 # 创建数据库
 wrangler d1 create task-assistant-db
@@ -1078,7 +1326,7 @@ wrangler d1 create task-assistant-db
 wrangler d1 migrations apply task-assistant-db
 ```
 
-### 15.4 构建与部署
+### 16.4 构建与部署
 ```bash
 # 安装依赖
 npm install
@@ -1093,25 +1341,27 @@ wrangler deploy --env preview
 wrangler deploy --env production
 ```
 
-### 15.5 设置环境变量（Secret）
+### 16.5 设置环境变量（Secret）
 ```bash
 wrangler secret put GEMINI_API_KEY
 wrangler secret put SERPER_API_KEY
 ```
 
-### 15.6 绑定自定义域名（可选）
+### 16.6 绑定自定义域名（可选）
 在 Cloudflare Dashboard 的 Workers 页面，添加路由或自定义域名。
 
-### 15.7 监控与日志
+### 16.7 监控与日志
 - 实时日志：`wrangler tail`
 - Dashboard 查看请求日志和错误报告。
 
 ---
 
-## 16. 总结
+## 17. 总结
 
-本技术设计方案基于 Cloudflare Workers + TypeScript + Hono 构建，通过抽象层实现 LLM、向量数据库、关系数据库的灵活替换。采用 SSE 实现流式对话，类结构和目录清晰，易于维护和扩展。所有设计均围绕 PRD 需求，确保功能完整、性能良好、安全可靠。
+本技术设计方案基于 Cloudflare Workers + TypeScript + Hono 构建，通过抽象层实现 LLM、向量数据库、关系数据库的灵活替换。采用 SSE 实现流式对话，类结构和目录清晰，易于维护和扩展。
 
-在 Agent 实现上，我们选择了轻量自研方案，包含 ReAct 循环、工具调用、子代理规划和 TOT/GOT 高级推理，既保持了边缘环境的轻量高效，又提供了足够强大的智能能力。部署流程完整，可快速上线验证。
+在 Agent 实现上，我们选择了轻量自研方案，包含 ReAct 循环、工具调用、子代理规划和 TOT/GOT 高级推理，既保持了边缘环境的轻量高效，又提供了足够强大的智能能力。LLM 调用方面，设计了模板化 Prompt、多层次上下文管理、生成质量评估和完整的 token 成本跟踪框架，确保可观测性和成本可控。
+
+部署流程完整，可快速上线验证。所有设计均围绕 PRD 需求，确保功能完整、性能良好、安全可靠。
 
 **文档结束**
