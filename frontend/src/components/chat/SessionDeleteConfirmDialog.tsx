@@ -28,7 +28,7 @@ export default function SessionDeleteConfirmDialog({
 
   const node = (
     <div
-      className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-md"
+      className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-md dark:bg-slate-950/85"
       role="presentation"
       onClick={busy ? undefined : onCancel}
     >
@@ -36,25 +36,26 @@ export default function SessionDeleteConfirmDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="w-full max-w-sm rounded-xl border border-red-500/30 bg-slate-900/98 p-5 shadow-[0_24px_64px_rgba(0,0,0,0.65),0_0_0_1px_rgba(248,113,113,0.12)]"
+        className="w-full max-w-sm rounded-xl border border-red-300/80 bg-white p-5 shadow-xl dark:border-red-500/30 dark:bg-slate-900/98 dark:shadow-[0_24px_64px_rgba(0,0,0,0.65),0_0_0_1px_rgba(248,113,113,0.12)]"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === 'Escape' && !busy) onCancel()
         }}
       >
-        <h2 id={titleId} className="text-sm font-semibold text-slate-100">
+        <h2 id={titleId} className="text-sm font-semibold text-slate-900 dark:text-slate-100">
           删除会话
         </h2>
-        <p className="mt-2 text-xs leading-relaxed text-slate-400">
-          确定删除「<span className="text-slate-200">{session.title}</span>」？聊天记录将一并删除且
-          <span className="text-red-300/90">不可恢复</span>。
+        <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+          确定删除「<span className="text-slate-900 dark:text-slate-200">{session.title}</span>
+          」？聊天记录将一并删除且
+          <span className="text-red-600 dark:text-red-300/90">不可恢复</span>。
         </p>
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
           <button
             ref={cancelRef}
             type="button"
             disabled={busy}
-            className="rounded-lg border border-slate-500/40 bg-transparent px-4 py-2 text-xs font-medium text-slate-400 transition hover:border-slate-400/60 hover:bg-slate-800/50 hover:text-slate-200 disabled:opacity-40"
+            className="rounded-lg border border-slate-300 bg-transparent px-4 py-2 text-xs font-medium text-slate-600 transition hover:border-slate-400 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40 dark:border-slate-500/40 dark:text-slate-400 dark:hover:border-slate-400/60 dark:hover:bg-slate-800/50 dark:hover:text-slate-200"
             onClick={onCancel}
           >
             取消

@@ -40,18 +40,18 @@ export default function UploadDropzone({ onFiles, disabled }: UploadDropzoneProp
       {...getRootProps()}
       className={`rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors ${
         disabled
-          ? 'cursor-not-allowed border-slate-700/60 bg-slate-900/40 text-slate-500'
+          ? 'cursor-not-allowed border-slate-300 bg-slate-100 text-slate-400 dark:border-slate-700/60 dark:bg-slate-900/40 dark:text-slate-500'
           : isDragActive
-            ? 'cursor-pointer border-emerald-400/50 bg-emerald-950/40 text-emerald-100'
-            : 'cursor-pointer border-emerald-500/25 bg-slate-900/35 text-slate-400 hover:border-emerald-400/40'
+            ? 'cursor-pointer border-emerald-500/60 bg-emerald-50 text-emerald-900 dark:border-emerald-400/50 dark:bg-emerald-950/40 dark:text-emerald-100'
+            : 'cursor-pointer border-emerald-400/50 bg-emerald-50/40 text-slate-600 hover:border-emerald-500/60 dark:border-emerald-500/25 dark:bg-slate-900/35 dark:text-slate-400 dark:hover:border-emerald-400/40'
       }`}
     >
       <input {...getInputProps()} />
-      <p className="text-sm font-medium text-slate-200">拖拽文件到此处，或</p>
+      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">拖拽文件到此处，或</p>
       <button
         type="button"
         disabled={disabled}
-        className="mt-2 text-sm font-semibold text-emerald-300 underline decoration-emerald-500/50 underline-offset-2 hover:text-emerald-200 disabled:opacity-50"
+        className="mt-2 text-sm font-semibold text-emerald-700 underline decoration-emerald-500/60 underline-offset-2 hover:text-emerald-900 disabled:opacity-50 dark:text-emerald-300 dark:decoration-emerald-500/50 dark:hover:text-emerald-200"
         onClick={(e) => {
           e.stopPropagation()
           open()
@@ -59,7 +59,9 @@ export default function UploadDropzone({ onFiles, disabled }: UploadDropzoneProp
       >
         选择文件
       </button>
-      <p className="mt-2 text-xs text-slate-500">单文件不超过 64MB；≤5MB 直传，更大走分片上传。</p>
+      <p className="mt-2 text-xs text-slate-600 dark:text-slate-500">
+        单文件不超过 64MB；≤5MB 直传，更大走分片上传。
+      </p>
     </div>
   )
 }

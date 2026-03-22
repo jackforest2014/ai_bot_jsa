@@ -36,26 +36,26 @@ export default function FileList({
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-500/35 bg-red-950/35 px-3 py-2 text-sm text-red-200">
+      <div className="rounded-xl border border-red-300/80 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-500/35 dark:bg-red-950/35 dark:text-red-200">
         {error}
       </div>
     )
   }
 
   if (loading && files.length === 0) {
-    return <p className="text-sm text-slate-400">加载中…</p>
+    return <p className="text-sm text-slate-600 dark:text-slate-400">加载中…</p>
   }
 
   if (files.length === 0) {
-    return <p className="text-sm text-slate-400">{emptyMessage ?? '暂无文件。'}</p>
+    return <p className="text-sm text-slate-600 dark:text-slate-400">{emptyMessage ?? '暂无文件。'}</p>
   }
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <span className="mr-auto text-xs text-slate-500">共 {files.length} 个文件</span>
+        <span className="mr-auto text-xs text-slate-600 dark:text-slate-500">共 {files.length} 个文件</span>
         <div
-          className="inline-flex rounded-lg border border-emerald-500/25 bg-slate-950/60 p-0.5"
+          className="inline-flex rounded-lg border border-emerald-500/35 bg-slate-100 p-0.5 dark:border-emerald-500/25 dark:bg-slate-950/60"
           role="group"
           aria-label="列表视图"
         >
@@ -64,8 +64,8 @@ export default function FileList({
             aria-pressed={view === 'grid'}
             className={`rounded-md px-3 py-1 text-xs font-medium ${
               view === 'grid'
-                ? 'bg-emerald-800/80 text-emerald-50 shadow-sm'
-                : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-200'
+                ? 'bg-emerald-600 text-white shadow-sm dark:bg-emerald-800/80 dark:text-emerald-50'
+                : 'text-slate-600 hover:bg-slate-200 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/80 dark:hover:text-slate-200'
             }`}
             onClick={() => setView('grid')}
           >
@@ -76,8 +76,8 @@ export default function FileList({
             aria-pressed={view === 'list'}
             className={`rounded-md px-3 py-1 text-xs font-medium ${
               view === 'list'
-                ? 'bg-emerald-800/80 text-emerald-50 shadow-sm'
-                : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-200'
+                ? 'bg-emerald-600 text-white shadow-sm dark:bg-emerald-800/80 dark:text-emerald-50'
+                : 'text-slate-600 hover:bg-slate-200 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/80 dark:hover:text-slate-200'
             }`}
             onClick={() => setView('list')}
           >

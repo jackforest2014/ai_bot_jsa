@@ -8,9 +8,11 @@ export interface UploadProgressProps {
 }
 
 function borderClass(item: UploadQueueItem): string {
-  if (item.status === 'error') return 'border border-red-500/40 bg-red-950/35'
-  if (item.status === 'success') return 'border border-emerald-500/25 bg-emerald-950/20'
-  return 'border border-dashed border-slate-600/70 bg-slate-900/50'
+  if (item.status === 'error')
+    return 'border border-red-300/80 bg-red-50 dark:border-red-500/40 dark:bg-red-950/35'
+  if (item.status === 'success')
+    return 'border border-emerald-300/70 bg-emerald-50 dark:border-emerald-500/25 dark:bg-emerald-950/20'
+  return 'border border-dashed border-slate-300 bg-slate-50 dark:border-slate-600/70 dark:bg-slate-900/50'
 }
 
 export default function UploadProgress({
@@ -26,11 +28,11 @@ export default function UploadProgress({
   return (
     <section className="space-y-2" aria-label="上传进度">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-emerald-100/90">上传队列</h3>
+        <h3 className="text-sm font-semibold text-emerald-800 dark:text-emerald-100/90">上传队列</h3>
         {hasTerminal && onClearFinished ? (
           <button
             type="button"
-            className="text-xs font-medium text-slate-500 underline decoration-slate-600 underline-offset-2 hover:text-emerald-300/90"
+            className="text-xs font-medium text-slate-600 underline decoration-slate-400 underline-offset-2 hover:text-emerald-800 dark:text-slate-500 dark:decoration-slate-600 dark:hover:text-emerald-300/90"
             onClick={onClearFinished}
           >
             清除已完成
@@ -42,8 +44,10 @@ export default function UploadProgress({
           <li key={item.clientId} className={`rounded-lg px-3 py-2 ${borderClass(item)}`}>
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-slate-100">{item.file.name}</p>
-                <p className="text-xs text-slate-500">
+                <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
+                  {item.file.name}
+                </p>
+                <p className="text-xs text-slate-600 dark:text-slate-500">
                   {item.status === 'uploading'
                     ? `上传中 ${item.progress}%`
                     : item.status === 'success'
@@ -53,7 +57,7 @@ export default function UploadProgress({
                         : '等待中'}
                 </p>
                 {item.status === 'uploading' || item.status === 'pending' ? (
-                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-[width] duration-150"
                       style={{ width: `${item.progress}%` }}
@@ -65,7 +69,7 @@ export default function UploadProgress({
                 {item.status === 'error' ? (
                   <button
                     type="button"
-                    className="rounded border border-slate-600/80 bg-slate-900/70 px-2 py-1 text-xs font-medium text-slate-200 hover:border-emerald-500/35"
+                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-800 hover:border-emerald-500/50 dark:border-slate-600/80 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:border-emerald-500/35"
                     onClick={() => onRetry(item.clientId)}
                   >
                     重试
@@ -74,7 +78,7 @@ export default function UploadProgress({
                 {item.status === 'success' || item.status === 'error' ? (
                   <button
                     type="button"
-                    className="text-xs font-medium text-slate-500 underline decoration-slate-600 underline-offset-2 hover:text-slate-300"
+                    className="text-xs font-medium text-slate-600 underline decoration-slate-400 underline-offset-2 hover:text-slate-800 dark:text-slate-500 dark:decoration-slate-600 dark:hover:text-slate-300"
                     onClick={() => onDismiss(item.clientId)}
                   >
                     移除

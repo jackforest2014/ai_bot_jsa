@@ -245,17 +245,20 @@ export default function FileWorkspace() {
   return (
     <div className="mx-auto max-w-full space-y-4 sm:space-y-6">
       <div>
-        <h2 className="bg-gradient-to-r from-emerald-200 via-slate-100 to-slate-300 bg-clip-text text-lg font-semibold text-transparent sm:text-xl">
+        <h2 className="bg-gradient-to-r from-emerald-800 via-slate-800 to-slate-600 bg-clip-text text-lg font-semibold text-transparent dark:from-emerald-200 dark:via-slate-100 dark:to-slate-300 sm:text-xl">
           工作空间
         </h2>
-        <p className="mt-1 text-sm text-slate-400">上传、筛选与管理文件；大文件自动分片上传。</p>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+          上传、筛选与管理文件；大文件自动分片上传。
+        </p>
       </div>
 
       <FolderBreadcrumb folder={breadcrumbFolder} onNavigate={navigateFolder} />
 
       {fromCacheOnly ? (
-        <div className="rounded-xl border border-amber-500/35 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
-          当前无法连接服务器，正在展示<strong className="mx-0.5 text-amber-50">本机缓存</strong>
+        <div className="rounded-xl border border-amber-300/80 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-500/35 dark:bg-amber-950/30 dark:text-amber-100">
+          当前无法连接服务器，正在展示
+          <strong className="mx-0.5 text-amber-900 dark:text-amber-50">本机缓存</strong>
           的文件列表（与当前目录 / 类型筛选一致）。网络恢复后请点击「刷新列表」；上传、重命名或修改标签后缓存会自动失效。
         </div>
       ) : null}
@@ -287,10 +290,10 @@ export default function FileWorkspace() {
           />
 
           <section className={`space-y-3 ${filePanelClass}`}>
-            <h3 className="text-sm font-semibold text-emerald-100/95">上传</h3>
-            <p className="text-xs text-slate-500">
+            <h3 className="text-sm font-semibold text-emerald-800 dark:text-emerald-100/95">上传</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-500">
               当前上传目录：
-              <span className="font-mono text-emerald-200/80">
+              <span className="font-mono text-emerald-800 dark:text-emerald-200/80">
                 {uploadFolderPath ? uploadFolderPath : '（根目录）'}
               </span>
               ；在工具栏选择「路径前缀」并填写后，可作为默认目录；也可在弹窗中单独指定。

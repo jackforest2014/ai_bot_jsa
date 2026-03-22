@@ -69,29 +69,29 @@ export default function SessionList() {
   }
 
   if (listLoading && sessions.length === 0) {
-    return <p className="px-1 text-xs text-slate-400">加载会话…</p>
+    return <p className="px-1 text-xs text-slate-500 dark:text-slate-400">加载会话…</p>
   }
 
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between gap-1 px-0.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-cyan-500/70">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-cyan-700 dark:text-cyan-500/70">
           历史
         </span>
         <button
           type="button"
           onClick={() => void newChat()}
-          className="rounded border border-cyan-500/35 bg-cyan-950/30 px-1.5 py-0.5 text-[10px] font-medium text-cyan-200/90 hover:border-cyan-400/50 hover:bg-cyan-950/50"
+          className="rounded border border-cyan-500/50 bg-cyan-50 px-1.5 py-0.5 text-[10px] font-medium text-cyan-800 hover:border-cyan-500/70 hover:bg-cyan-100/90 dark:border-cyan-500/35 dark:bg-cyan-950/30 dark:text-cyan-200/90 dark:hover:border-cyan-400/50 dark:hover:bg-cyan-950/50"
         >
           新对话
         </button>
       </div>
-      <p className="px-0.5 text-[10px] leading-tight text-slate-500">
+      <p className="px-0.5 text-[10px] leading-tight text-slate-600 dark:text-slate-500">
         右键或铅笔图标可改名称；垃圾桶图标删除会话
       </p>
       <div className="max-h-64 space-y-0.5 overflow-y-auto pr-0.5">
         {sorted.length === 0 ? (
-          <p className="px-1 text-xs text-slate-400">暂无会话，点击「新对话」开始。</p>
+          <p className="px-1 text-xs text-slate-500 dark:text-slate-400">暂无会话，点击「新对话」开始。</p>
         ) : (
           sorted.map((s) => (
             <SessionListItem

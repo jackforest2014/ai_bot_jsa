@@ -18,7 +18,7 @@ function MobileSidebarBackdrop() {
     <button
       type="button"
       aria-label="关闭导航菜单"
-      className="fixed inset-0 z-40 bg-slate-950/70 md:hidden"
+      className="fixed inset-0 z-40 bg-slate-900/50 dark:bg-slate-950/70 md:hidden"
       onClick={() => setSidebarCollapsed(true)}
     />
   )
@@ -59,13 +59,13 @@ export default function AppShell() {
   }, [token, profileHydrated])
 
   return (
-    <div className="flex min-h-screen bg-[#030712] bg-gradient-to-br from-slate-950 via-[#070b18] to-slate-950 text-slate-200">
+    <div className="flex min-h-screen min-h-0 bg-gradient-to-br from-slate-100 via-white to-slate-200 text-slate-800 dark:bg-[#030712] dark:from-slate-950 dark:via-[#070b18] dark:to-slate-950 dark:text-slate-200 md:h-[100dvh] md:max-h-[100dvh] md:overflow-hidden">
       <MobileSidebarBackdrop />
       <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col md:overflow-hidden">
         <Header />
-        <main className="relative flex-1 p-3 sm:p-4 before:pointer-events-none before:absolute before:inset-0 before:bg-[linear-gradient(rgba(34,211,238,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.035)_1px,transparent_1px)] before:bg-[length:28px_28px] before:opacity-70">
-          <div className="relative z-10">
+        <main className="relative min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 before:pointer-events-none before:absolute before:inset-0 before:bg-[linear-gradient(rgba(15,23,42,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.06)_1px,transparent_1px)] before:bg-[length:28px_28px] before:opacity-80 dark:before:bg-[linear-gradient(rgba(34,211,238,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.035)_1px,transparent_1px)] dark:before:opacity-70">
+          <div className="relative z-10 mx-auto min-h-[min(100%,calc(100vh-5rem))] w-full max-w-[1800px] p-3 text-slate-800 sm:p-4 dark:mx-0 dark:max-w-none dark:p-3 dark:text-slate-200">
             <Outlet />
           </div>
         </main>

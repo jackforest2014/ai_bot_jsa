@@ -45,8 +45,8 @@ export default function SessionListItem({
       }}
       className={`rounded-md px-2 py-1.5 text-left outline-none ring-cyan-500/40 focus-visible:ring-2 ${
         active
-          ? 'border border-cyan-500/35 bg-cyan-950/45 text-cyan-50 shadow-[0_0_20px_rgba(34,211,238,0.08)]'
-          : 'border border-transparent text-slate-300 hover:border-slate-700/80 hover:bg-slate-800/60 hover:text-slate-100'
+          ? 'border border-cyan-500/50 bg-cyan-50 text-cyan-950 shadow-sm dark:border-cyan-500/35 dark:bg-cyan-950/45 dark:text-cyan-50 dark:shadow-[0_0_20px_rgba(34,211,238,0.08)]'
+          : 'border border-transparent text-slate-700 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:border-slate-700/80 dark:hover:bg-slate-800/60 dark:hover:text-slate-100'
       }`}
     >
       {renaming ? (
@@ -69,7 +69,9 @@ export default function SessionListItem({
                 onRequestRename()
               }}
               className={`rounded p-0.5 ${
-                active ? 'text-cyan-200/85 hover:text-cyan-100' : 'text-slate-500 hover:text-cyan-300/90'
+                active
+                  ? 'text-cyan-800 hover:text-cyan-950 dark:text-cyan-200/85 dark:hover:text-cyan-100'
+                  : 'text-slate-500 hover:text-cyan-700 dark:hover:text-cyan-300/90'
               }`}
             >
               <IconEditPencil className="h-3.5 w-3.5" />

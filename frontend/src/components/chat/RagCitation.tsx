@@ -50,7 +50,7 @@ export default function RagCitation({
         role="dialog"
         aria-label="引用详情"
       >
-        <div className="pointer-events-auto max-h-72 overflow-y-auto rounded-lg border border-slate-600/80 bg-slate-950/95 p-3 text-left text-xs text-slate-200 shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
+        <div className="pointer-events-auto max-h-72 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 text-left text-xs text-slate-800 shadow-lg dark:border-slate-600/80 dark:bg-slate-950/95 dark:text-slate-200 dark:shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
           {!hasBody ? (
             <p className="text-slate-500">暂无引用详情（等待 SSE 或标签内文）。</p>
           ) : null}

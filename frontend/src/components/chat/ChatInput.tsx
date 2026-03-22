@@ -42,7 +42,7 @@ export default function ChatInput({
   }
 
   return (
-    <div className="relative rounded-lg border border-cyan-500/25 bg-slate-950/60 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-sm">
+    <div className="relative rounded-lg border border-cyan-500/35 bg-white/90 shadow-md backdrop-blur-sm dark:border-cyan-500/25 dark:bg-slate-950/60 dark:shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
       {isStreaming ? (
         <div
           className="pointer-events-none absolute inset-0 z-10 rounded-lg border-2 border-cyan-400/35 animate-pulse"
@@ -62,10 +62,13 @@ export default function ChatInput({
           placeholder={placeholder}
           disabled={inputDisabled}
           aria-busy={isStreaming}
-          className="min-h-[5.5rem] w-full resize-y rounded-md border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500/60 focus:outline-none focus:ring-1 focus:ring-cyan-500/40 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-[5.5rem] w-full resize-y rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-cyan-500/60 focus:outline-none focus:ring-1 focus:ring-cyan-500/40 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-100 dark:placeholder:text-slate-500"
         />
         {isStreaming ? (
-          <div className="flex items-center gap-2 px-1 text-xs text-cyan-300/90" aria-live="polite">
+          <div
+            className="flex items-center gap-2 px-1 text-xs text-cyan-700 dark:text-cyan-300/90"
+            aria-live="polite"
+          >
             <span className="inline-flex gap-0.5" aria-hidden>
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400 [animation-delay:-0.2s]" />
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400 [animation-delay:-0.1s]" />
@@ -79,7 +82,7 @@ export default function ChatInput({
             <button
               type="button"
               onClick={() => onAbort()}
-              className="rounded-md border border-amber-500/40 bg-amber-950/50 px-3 py-1.5 text-sm font-medium text-amber-100 hover:bg-amber-950/70"
+              className="rounded-md border border-amber-400/70 bg-amber-100 px-3 py-1.5 text-sm font-medium text-amber-950 hover:bg-amber-200/90 dark:border-amber-500/40 dark:bg-amber-950/50 dark:text-amber-100 dark:hover:bg-amber-950/70"
             >
               停止
             </button>

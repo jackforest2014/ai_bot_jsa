@@ -56,8 +56,8 @@ function FolderSubtree({
                 type="button"
                 className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-1 pr-2 text-left text-xs transition-colors ${
                   selected
-                    ? 'bg-emerald-950/55 text-emerald-100 ring-1 ring-emerald-500/35'
-                    : 'text-slate-300 hover:bg-slate-800/55 hover:text-slate-100'
+                    ? 'bg-emerald-100 text-emerald-900 ring-1 ring-emerald-500/50 dark:bg-emerald-950/55 dark:text-emerald-100 dark:ring-emerald-500/35'
+                    : 'text-slate-700 hover:bg-slate-200 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/55 dark:hover:text-slate-100'
                 }`}
                 onClick={() => onSelectPath(n.path)}
               >
@@ -125,10 +125,10 @@ export default function FileFolderTree({
   if (!files.length) {
     return (
       <nav className={`${filePanelClass}`} aria-label="文件夹浏览">
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-200/90">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-200/90">
           文件夹
         </h3>
-        <p className="text-[11px] leading-snug text-slate-500">
+        <p className="text-[11px] leading-snug text-slate-600 dark:text-slate-500">
           尚无文件。上传后此处会按目录分层展示，便于像资源管理器一样浏览。
         </p>
       </nav>
@@ -141,10 +141,10 @@ export default function FileFolderTree({
 
   return (
     <nav className={`${filePanelClass}`} aria-label="文件夹浏览">
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-200/90">
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-200/90">
         文件夹
       </h3>
-      <p className="mb-2 text-[11px] leading-snug text-slate-500">
+      <p className="mb-2 text-[11px] leading-snug text-slate-600 dark:text-slate-500">
         点击目录与上方面包屑一致；有子目录时可点 ▸ 折叠或展开。
       </p>
       <div className="max-h-[min(22rem,50vh)] space-y-1 overflow-y-auto pr-1 lg:max-h-[min(32rem,calc(100vh-14rem))]">
@@ -154,8 +154,8 @@ export default function FileFolderTree({
             type="button"
             className={`flex w-full min-w-0 items-center gap-1.5 rounded-md py-1 pr-2 text-left text-xs transition-colors ${
               folderMode === 'all'
-                ? 'bg-emerald-950/55 text-emerald-100 ring-1 ring-emerald-500/35'
-                : 'text-slate-300 hover:bg-slate-800/55 hover:text-slate-100'
+                ? 'bg-emerald-100 text-emerald-900 ring-1 ring-emerald-500/50 dark:bg-emerald-950/55 dark:text-emerald-100 dark:ring-emerald-500/35'
+                : 'text-slate-700 hover:bg-slate-200 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/55 dark:hover:text-slate-100'
             }`}
             onClick={() => onNavigate(undefined)}
           >
@@ -170,8 +170,8 @@ export default function FileFolderTree({
             type="button"
             className={`flex w-full min-w-0 items-center gap-1.5 rounded-md py-1 pr-2 text-left text-xs transition-colors ${
               folderMode === 'root'
-                ? 'bg-emerald-950/55 text-emerald-100 ring-1 ring-emerald-500/35'
-                : 'text-slate-300 hover:bg-slate-800/55 hover:text-slate-100'
+                ? 'bg-emerald-100 text-emerald-900 ring-1 ring-emerald-500/50 dark:bg-emerald-950/55 dark:text-emerald-100 dark:ring-emerald-500/35'
+                : 'text-slate-700 hover:bg-slate-200 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/55 dark:hover:text-slate-100'
             }`}
             onClick={() => onNavigate('')}
           >

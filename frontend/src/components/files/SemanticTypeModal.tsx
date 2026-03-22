@@ -8,13 +8,13 @@ import { fileControlClass, fileLabelClass } from '@/lib/file-workspace-theme'
 import type { FileInfo } from '@/types/file'
 
 const modalCardClass =
-  'w-full max-w-md rounded-xl border border-emerald-500/25 bg-slate-950/95 p-4 shadow-[0_24px_64px_rgba(0,0,0,0.55)]'
+  'w-full max-w-md rounded-xl border border-emerald-500/35 bg-white p-4 shadow-xl dark:border-emerald-500/25 dark:bg-slate-950/95 dark:shadow-[0_24px_64px_rgba(0,0,0,0.55)]'
 
 const uploadModalCardClass =
-  'w-full max-w-lg rounded-xl border border-emerald-500/25 bg-slate-950/95 p-4 shadow-[0_24px_64px_rgba(0,0,0,0.55)]'
+  'w-full max-w-lg rounded-xl border border-emerald-500/35 bg-white p-4 shadow-xl dark:border-emerald-500/25 dark:bg-slate-950/95 dark:shadow-[0_24px_64px_rgba(0,0,0,0.55)]'
 
 const btnCancelClass =
-  'rounded-lg border border-slate-500/40 bg-transparent px-3 py-1.5 text-sm font-medium text-slate-400 transition hover:border-slate-400/60 hover:bg-slate-800/50 hover:text-slate-200 disabled:opacity-40'
+  'rounded-lg border border-slate-300 bg-transparent px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:border-slate-400 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40 dark:border-slate-500/40 dark:text-slate-400 dark:hover:border-slate-400/60 dark:hover:bg-slate-800/50 dark:hover:text-slate-200'
 
 const btnPrimaryClass =
   'rounded-lg border-0 bg-gradient-to-r from-emerald-700 to-emerald-600 px-3 py-1.5 text-sm font-semibold text-white shadow-[0_4px_20px_rgba(16,185,129,0.35)] hover:from-emerald-600 hover:to-emerald-500 disabled:cursor-not-allowed disabled:from-slate-600 disabled:to-slate-600 disabled:shadow-none disabled:opacity-50'
@@ -91,7 +91,7 @@ function EditSemanticBody({
       className={modalCardClass}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <h2 id="semantic-modal-title" className="text-lg font-semibold text-slate-100">
+      <h2 id="semantic-modal-title" className="text-lg font-semibold text-slate-900 dark:text-slate-100">
         编辑类型与标签
       </h2>
       <p className="mt-1 truncate text-sm text-slate-400" title={file.original_name}>
@@ -211,7 +211,7 @@ function UploadSemanticBody({
       className={uploadModalCardClass}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <h2 id="semantic-modal-title" className="text-lg font-semibold text-slate-100">
+      <h2 id="semantic-modal-title" className="text-lg font-semibold text-slate-900 dark:text-slate-100">
         填写上传元数据
       </h2>
       <p className="mt-1 text-sm text-slate-400" title={fileNames.join('\n')}>
@@ -291,7 +291,7 @@ export default function SemanticTypeModal(props: SemanticTypeModalProps) {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[280] flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[280] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm dark:bg-slate-950/85"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) props.onClose()
       }}

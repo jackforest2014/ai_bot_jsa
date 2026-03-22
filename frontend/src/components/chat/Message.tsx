@@ -34,12 +34,12 @@ function createMarkdownComponents(variant: MarkdownVariant): Components {
   const linkClass =
     variant === 'user'
       ? 'font-medium text-sky-300 underline decoration-sky-400/80 hover:text-sky-200'
-      : 'font-medium text-cyan-300 underline decoration-cyan-400/70 hover:text-cyan-200'
+      : 'font-medium text-cyan-700 underline decoration-cyan-500/70 hover:text-cyan-900 dark:text-cyan-300 dark:decoration-cyan-400/70 dark:hover:text-cyan-200'
 
   const inlineCodeClass =
     variant === 'user'
       ? 'rounded bg-white/15 px-1 py-0.5 text-[0.9em] text-slate-100'
-      : 'rounded bg-slate-800/95 px-1 py-0.5 text-[0.9em] text-cyan-100'
+      : 'rounded bg-slate-200/90 px-1 py-0.5 text-[0.9em] text-slate-800 dark:bg-slate-800/95 dark:text-cyan-100'
 
   return {
     a: ({ href, children }) => (
@@ -49,16 +49,20 @@ function createMarkdownComponents(variant: MarkdownVariant): Components {
     ),
     p: ({ children }) => (
       <p
-        className={`my-2 text-sm leading-relaxed first:mt-0 last:mb-0 ${ast ? 'text-slate-200' : ''}`}
+        className={`my-2 text-sm leading-relaxed first:mt-0 last:mb-0 ${ast ? 'text-slate-700 dark:text-slate-200' : ''}`}
       >
         {children}
       </p>
     ),
     ul: ({ children }) => (
-      <ul className={`my-2 list-disc pl-5 text-sm ${ast ? 'text-slate-200' : ''}`}>{children}</ul>
+      <ul className={`my-2 list-disc pl-5 text-sm ${ast ? 'text-slate-700 dark:text-slate-200' : ''}`}>
+        {children}
+      </ul>
     ),
     ol: ({ children }) => (
-      <ol className={`my-2 list-decimal pl-5 text-sm ${ast ? 'text-slate-200' : ''}`}>{children}</ol>
+      <ol className={`my-2 list-decimal pl-5 text-sm ${ast ? 'text-slate-700 dark:text-slate-200' : ''}`}>
+        {children}
+      </ol>
     ),
     li: ({ children }) => <li className="my-0.5">{children}</li>,
     blockquote: ({ children }) => (
@@ -66,7 +70,7 @@ function createMarkdownComponents(variant: MarkdownVariant): Components {
         className={
           variant === 'user'
             ? 'my-2 border-l-2 border-white/30 pl-3 text-sm text-slate-200'
-            : 'my-2 border-l-2 border-cyan-500/35 pl-3 text-sm text-slate-300'
+            : 'my-2 border-l-2 border-cyan-500/50 pl-3 text-sm text-slate-600 dark:border-cyan-500/35 dark:text-slate-300'
         }
       >
         {children}
@@ -74,31 +78,37 @@ function createMarkdownComponents(variant: MarkdownVariant): Components {
     ),
     h1: ({ children }) => (
       <h1
-        className={`mb-2 mt-3 text-base font-semibold first:mt-0 ${ast ? 'text-slate-100' : ''}`}
+        className={`mb-2 mt-3 text-base font-semibold first:mt-0 ${ast ? 'text-slate-900 dark:text-slate-100' : ''}`}
       >
         {children}
       </h1>
     ),
     h2: ({ children }) => (
-      <h2 className={`mb-2 mt-3 text-sm font-semibold first:mt-0 ${ast ? 'text-slate-100' : ''}`}>
+      <h2
+        className={`mb-2 mt-3 text-sm font-semibold first:mt-0 ${ast ? 'text-slate-900 dark:text-slate-100' : ''}`}
+      >
         {children}
       </h2>
     ),
     h3: ({ children }) => (
-      <h3 className={`mb-1 mt-2 text-sm font-semibold first:mt-0 ${ast ? 'text-slate-100' : ''}`}>
+      <h3
+        className={`mb-1 mt-2 text-sm font-semibold first:mt-0 ${ast ? 'text-slate-900 dark:text-slate-100' : ''}`}
+      >
         {children}
       </h3>
     ),
     hr: () => (
       <hr
-        className={variant === 'user' ? 'my-3 border-white/20' : 'my-3 border-slate-600/80'}
+        className={
+          variant === 'user' ? 'my-3 border-white/20' : 'my-3 border-slate-300 dark:border-slate-600/80'
+        }
       />
     ),
     table: ({ children }) => (
       <div
         className={
           ast
-            ? 'my-2 overflow-x-auto rounded-md border border-slate-600/80 bg-slate-950/90'
+            ? 'my-2 overflow-x-auto rounded-md border border-slate-200 bg-white dark:border-slate-600/80 dark:bg-slate-950/90'
             : 'my-2 overflow-x-auto rounded-md border border-slate-200 bg-white'
         }
       >
@@ -106,13 +116,13 @@ function createMarkdownComponents(variant: MarkdownVariant): Components {
       </div>
     ),
     thead: ({ children }) => (
-      <thead className={ast ? 'bg-slate-800/90' : 'bg-slate-100'}>{children}</thead>
+      <thead className={ast ? 'bg-slate-100 dark:bg-slate-800/90' : 'bg-slate-100'}>{children}</thead>
     ),
     th: ({ children }) => (
       <th
         className={
           ast
-            ? 'border border-slate-600 px-2 py-1.5 font-semibold text-slate-100'
+            ? 'border border-slate-200 px-2 py-1.5 font-semibold text-slate-800 dark:border-slate-600 dark:text-slate-100'
             : 'border border-slate-200 px-2 py-1.5 font-semibold text-slate-800'
         }
       >
@@ -123,7 +133,7 @@ function createMarkdownComponents(variant: MarkdownVariant): Components {
       <td
         className={
           ast
-            ? 'border border-slate-600 px-2 py-1.5 text-slate-300'
+            ? 'border border-slate-200 px-2 py-1.5 text-slate-700 dark:border-slate-600 dark:text-slate-300'
             : 'border border-slate-200 px-2 py-1.5 text-slate-700'
         }
       >
@@ -160,12 +170,12 @@ function PreWithCopy({ children, variant }: { children?: ReactNode; variant: Mar
   const preSurface =
     variant === 'user'
       ? 'border border-white/10 bg-slate-950/80 text-slate-100'
-      : 'border border-slate-600/70 bg-slate-950 text-slate-100'
+      : 'border border-slate-200 bg-slate-50 text-slate-800 dark:border-slate-600/70 dark:bg-slate-950 dark:text-slate-100'
 
   const copyBtn =
     variant === 'user'
       ? 'border-slate-500/50 bg-slate-900/95 text-slate-200 hover:bg-slate-800'
-      : 'border-cyan-500/35 bg-slate-900/95 text-cyan-100 hover:bg-slate-800'
+      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-cyan-500/35 dark:bg-slate-900/95 dark:text-cyan-100 dark:hover:bg-slate-800'
 
   return (
     <div className="group relative my-2">
@@ -274,12 +284,12 @@ export default function Message({ message, onRetry }: MessageProps) {
   const isUser = message.role === 'user'
   const bubble = isUser
     ? 'max-w-[min(92%,42rem)] rounded-xl border-2 border-cyan-400/50 bg-gradient-to-br from-cyan-900 to-teal-950 px-3 py-2 text-sm text-white shadow-[0_4px_24px_rgba(34,211,238,0.22)]'
-    : 'max-w-[min(92%,42rem)] rounded-xl border border-violet-500/35 bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-950 px-3 py-2 text-sm text-slate-100 shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
+    : 'max-w-[min(92%,42rem)] rounded-xl border border-violet-300/70 bg-gradient-to-br from-slate-50 via-white to-violet-50/60 px-3 py-2 text-sm text-slate-800 shadow-md dark:border-violet-500/35 dark:from-slate-800 dark:via-slate-900 dark:to-zinc-950 dark:text-slate-100 dark:shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
 
   const timeParts = messageTimeParts(message.createdAt)
   const timeClass = isUser
     ? 'text-[10px] tabular-nums text-cyan-200/55'
-    : 'text-[10px] tabular-nums text-slate-500'
+    : 'text-[10px] tabular-nums text-slate-500 dark:text-slate-500'
 
   const notices = !isUser ? collectBackendNotices(message.streamMeta) : []
   const hasAssistantText = !isUser && message.content.trim().length > 0
@@ -294,7 +304,7 @@ export default function Message({ message, onRetry }: MessageProps) {
           {notices.map((text) => (
             <aside
               key={text}
-              className="rounded-md border border-amber-500/35 bg-amber-950/35 px-2.5 py-1.5 text-xs leading-relaxed text-amber-100"
+              className="rounded-md border border-amber-300/80 bg-amber-50 px-2.5 py-1.5 text-xs leading-relaxed text-amber-950 dark:border-amber-500/35 dark:bg-amber-950/35 dark:text-amber-100"
             >
               {text}
             </aside>
@@ -303,18 +313,18 @@ export default function Message({ message, onRetry }: MessageProps) {
       ) : null}
       {message.streamFailed ? (
         <div
-          className="mb-2 rounded-md border border-red-500/40 bg-red-950/45 px-2.5 py-1.5 text-xs text-red-100"
+          className="mb-2 rounded-md border border-red-300/80 bg-red-50 px-2.5 py-1.5 text-xs text-red-900 dark:border-red-500/40 dark:bg-red-950/45 dark:text-red-100"
           role="alert"
         >
           <p className="font-medium">回复未完整生成</p>
-          <p className="mt-0.5 whitespace-pre-wrap text-red-200/90">
+          <p className="mt-0.5 whitespace-pre-wrap text-red-800 dark:text-red-200/90">
             {message.streamErrorMessage ?? '请重试'}
           </p>
           {onRetry ? (
             <button
               type="button"
               onClick={onRetry}
-              className="mt-2 rounded border border-red-400/40 bg-red-950/60 px-2 py-1 text-xs font-medium text-red-100 hover:bg-red-900/50"
+              className="mt-2 rounded border border-red-400/60 bg-red-100 px-2 py-1 text-xs font-medium text-red-900 hover:bg-red-200/80 dark:border-red-400/40 dark:bg-red-950/60 dark:text-red-100 dark:hover:bg-red-900/50"
             >
               重试
             </button>
@@ -322,7 +332,7 @@ export default function Message({ message, onRetry }: MessageProps) {
         </div>
       ) : null}
       {showAssistantPlaceholder ? (
-        <span className="text-slate-500" aria-hidden>
+        <span className="text-slate-400 dark:text-slate-500" aria-hidden>
           …
         </span>
       ) : null}

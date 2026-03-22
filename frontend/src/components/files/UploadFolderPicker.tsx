@@ -114,8 +114,8 @@ function FolderSubtree({
                     disabled={disabled}
                     className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-1 pr-2 text-left text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
                       selectedPath === n.path
-                        ? 'bg-emerald-950/55 text-emerald-100 ring-1 ring-emerald-500/35'
-                        : 'text-slate-300 hover:bg-slate-800/55 hover:text-slate-100'
+                        ? 'bg-emerald-100 text-emerald-900 ring-1 ring-emerald-500/50 dark:bg-emerald-950/55 dark:text-emerald-100 dark:ring-emerald-500/35'
+                        : 'text-slate-700 hover:bg-slate-200 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/55 dark:hover:text-slate-100'
                     }`}
                     onClick={() => onSelectPath(n.path)}
                   >
@@ -332,7 +332,7 @@ export default function UploadFolderPicker({
     <div className="space-y-2">
       <span className={fileLabelClass}>保存目录</span>
       <div
-        className="max-h-52 overflow-y-auto rounded-lg border border-emerald-500/20 bg-slate-950/50 p-2"
+        className="max-h-52 overflow-y-auto rounded-lg border border-emerald-500/30 bg-slate-50 p-2 dark:border-emerald-500/20 dark:bg-slate-950/50"
         role="group"
         aria-label="选择保存目录"
       >
@@ -341,8 +341,8 @@ export default function UploadFolderPicker({
           disabled={disabled}
           className={`flex w-full min-w-0 items-center gap-1.5 rounded-md py-1 pr-2 text-left text-xs transition-colors disabled:opacity-45 ${
             selectedPath === ''
-              ? 'bg-emerald-950/55 text-emerald-100 ring-1 ring-emerald-500/35'
-              : 'text-slate-300 hover:bg-slate-800/55 hover:text-slate-100'
+              ? 'bg-emerald-100 text-emerald-900 ring-1 ring-emerald-500/50 dark:bg-emerald-950/55 dark:text-emerald-100 dark:ring-emerald-500/35'
+              : 'text-slate-700 hover:bg-slate-200 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/55 dark:hover:text-slate-100'
           }`}
           onClick={() => onChange('')}
         >

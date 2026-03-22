@@ -63,7 +63,7 @@ export default function SessionRenameInline({
           onCancel()
         }
       }}
-      className="w-full rounded border border-cyan-500/60 bg-slate-950 px-1.5 py-0.5 text-xs text-slate-100 outline-none ring-1 ring-cyan-500/25 placeholder:text-slate-500"
+      className="w-full rounded border border-cyan-500/60 bg-white px-1.5 py-0.5 text-xs text-slate-900 outline-none ring-1 ring-cyan-500/25 placeholder:text-slate-400 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500"
       onClick={(e) => e.stopPropagation()}
     />
   )
