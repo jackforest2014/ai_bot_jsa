@@ -5,10 +5,12 @@
 | 版本 | 日期 | 作者 | 变更说明 |
 |------|------|------|----------|
 | 1.0 | 2026-03-21 | AI Assistant | 初稿完成 |
-| 1.2 | 2026-03-21 | AI Assistant | 对齐 [PRD v1.1](../products/ai_bot_v1_1.md) 与后端 [tech_design_ai_bot_v1_2.md](./tech_design_ai_bot_v1_2.md)（§5.x）：SSE `tool_result_meta`/`citation`、`preferences`、任务 `detail`、文件 `folder_path`/`tags`/`processed`、完整 files API、小文件/分片双路径、64MB 校验、浏览器通知、搜索/研究态与配额提示、登录与 AI 引导关系说明 |
+| 1.2 | 2026-03-21 | AI Assistant | 对齐 [PRD v1.1](../products/ai_bot_v1_1.md) 与后端 [tech_design_ai_bot_v1_2.md](./tech_design_ai_bot_v1_2.md)（§5.x）：SSE `tool_result_meta`/`citation`、`preferences`、任务 `detail`、文件 `folder_path`/`tags`/`processed`、完整 files API、小文件/分片双路径、单文件大小校验、浏览器通知、搜索/研究态与配额提示、登录与 AI 引导关系说明 |
 | 1.3 | 2026-03-21 | AI Assistant | §6.1、§13：由「增量片段」改为**完整目录约定**（`src/components/` 全树 + 全量 `src/` 与根配置），与 §3 模块表及 [tasks_frontend_v1_2.md](../tasks/tasks_frontend_v1_2.md) 中的路径、组件名对齐 |
 | 1.4 | 2026-03-21 | AI Assistant | 与仓库布局对齐：**前端工程根为 `frontend/`**（与根目录 **`backend/`** 并列）；§3 关键路径、§6.1 / §13 树状结构均以 `frontend/` 为前缀；代码片段中 `// src/...` 注释仍表示 `frontend/src/...` |
 | 1.5 | 2026-03-21 | AI Assistant | 对齐 [PRD v1.2](../products/ai_bot_v1_1.md) 与后端 **§1.4**：DeepSeek 式主对话区 + 可折叠会话列表、`session_id` 与历史拉取、匿名登录页（名称必填/邮箱选填、「开始吧」/「欢迎回来」）、会话右键重命名、落地页科技感视觉；`POST /api/auth/login`、`/api/sessions` 系列 |
+| 1.6 | 2026-03-21 | AI Assistant | **工作空间**：并入对话页底部可拖拽高度的 **`ChatWorkspaceDock`**（`FileWorkspacePanel`：左侧目录树 + 右侧上传区）；侧栏**移除**「工作空间」独立入口；dock **收起/展开**为 SVG 图标 + 悬浮文案「收起」「点击展开」。**单文件上限**与后端对齐为 **10MB**（`MAX_FILE_BYTES`、413 与 toast 文案）。`/files` 等路由可重定向至首页以兼容书签 |
+| 1.7 | 2026-03-21 | AI Assistant | **`uiStore.workspaceDockCollapsed` 默认 `true`**（新用户首访 Dock 收起）；与 PRD v1.3 §2.1-8 一致；已持久化用户保持本地记录 |
 
 ### 与 PRD / 后端的范围说明
 
@@ -53,12 +55,11 @@
 │  │  └─────────────┘  └─────────────┘  └─────────────────┘   │  │
 │  │  ┌─────────────────────────────────────────────────────┐  │  │
 │  │  │                   页面组件层                         │  │  │
-│  │  │  ┌──────────────┐ ┌──────────────┐ ┌────────────┐  │  │  │
-│  │  │  │ 对话页面     │ │ 工作空间页面 │ │ 设置页面   │  │  │  │
-│  │  │  │ (Chat)       │ │ (Files)      │ │ (Settings) │  │  │  │
-│  │  │  │ 主区单列对话 │ │              │ │            │  │  │  │
-│  │  │  │ + 侧栏会话列表│ │              │ │            │  │  │  │
-│  │  │  └──────────────┘ └──────────────┘ └────────────┘  │  │  │
+│  │  │  ┌────────────────────────────────┐ ┌────────────┐  │  │  │
+│  │  │  │ 对话页面 (Chat)                │ │ 设置页面   │  │  │  │
+│  │  │  │ 主区单列对话 + 侧栏会话列表    │ │ (Settings) │  │  │  │
+│  │  │  │ 底部 Dock：工作空间树与上传    │ │            │  │  │  │
+│  │  │  └────────────────────────────────┘ └────────────┘  │  │  │
 │  │  └─────────────────────────────────────────────────────┘  │  │
 │  │  ┌─────────────────────────────────────────────────────┐  │  │
 │  │  │                   公共组件层                         │  │  │
@@ -94,9 +95,9 @@
 | **会话** | 列表、创建、消息分页、重命名 | `frontend/src/api/sessions.ts`, `frontend/src/hooks/useSessions.ts` |
 | **SSE / 对话流** | 解析 `token` + **`tool_result_meta`** + **`citation`** + `intention`；**随请求携带 `session_id`** | `frontend/src/lib/chat-stream.ts`, `frontend/src/hooks/useChatStream.ts` |
 | **对话模块** | **中间单列对话区（参考 DeepSeek）**、底部输入；消息流、富文本与引用悬停 | `frontend/src/pages/Chat/`, `frontend/src/components/chat/` |
-| **布局 / 会话列表** | 侧栏「对话」下 **可折叠** 会话列表；**右键菜单「修改名称」**、原位编辑 | `frontend/src/components/layout/Sidebar.tsx`, `frontend/src/components/chat/SessionList.tsx`, `SessionRenameInline.tsx` |
+| **布局 / 会话列表** | 侧栏「对话」下 **可折叠** 会话列表；**右键菜单「修改名称」**、原位编辑；**无**侧栏「工作空间」项（工作区仅对话页 Dock） | `frontend/src/components/layout/Sidebar.tsx`, `frontend/src/components/chat/SessionList.tsx`, `SessionRenameInline.tsx`, `frontend/src/components/chat/ChatWorkspaceDock.tsx` |
 | **任务模块** | 任务列表、**detail/子任务**展示（与对话互补） | `frontend/src/components/tasks/`, `frontend/src/hooks/useTasks.ts` |
-| **文件管理模块** | 列表筛选、上传（小/大）、标签、路径、**processed** 展示 | `frontend/src/pages/Files/`, `frontend/src/hooks/useFiles.ts`, `frontend/src/hooks/useFileUpload.ts` |
+| **文件管理模块** | 列表筛选、上传（小/大）、标签、路径、**processed** 展示；UI 主入口为 **Chat 页 Dock** 内 `FileWorkspacePanel` | `frontend/src/pages/Chat/`（装配 Dock）、`frontend/src/components/files/`, `frontend/src/hooks/useFiles.ts`, `frontend/src/hooks/useFileUpload.ts` |
 | **用户设置模块** | 用户信息、**preferences**、AI 昵称 | `frontend/src/pages/Settings/` |
 | **公共组件** | 消息气泡、文件卡片、进度条、模态框等 | `frontend/src/components/ui/` |
 
@@ -293,7 +294,7 @@ frontend/src/components/
 ├── layout/                    # 全局壳层：与架构图中 Header / 侧边栏对应
 │   ├── AppShell.tsx           # Outlet + 公共布局槽位
 │   ├── Header.tsx
-│   └── Sidebar.tsx            # 导航：Chat（下挂可折叠会话列表）/ Files / Settings
+│   └── Sidebar.tsx            # 导航：Chat（下挂可折叠会话列表）/ Settings（无 Files 侧栏项）
 ├── auth/
 │   └── RequireAuth.tsx        # 与 §8.3 路由守卫配合（未登录跳转 /login）
 ├── chat/                      # 对话页专用（对应 frontend/src/pages/Chat/）
@@ -303,6 +304,7 @@ frontend/src/components/
 │   ├── Message.tsx            # Markdown、<rag>/<tool> 与 SSE 元数据关联
 │   ├── MessageList.tsx        # 可选：配合 react-window / react-virtual
 │   ├── ChatInput.tsx          # 多行输入、发送/中止流式请求（附带当前 session_id）
+│   ├── ChatWorkspaceDock.tsx  # 底部工作空间：可拖拽高度、收起条（图标 + 悬浮「点击展开」/「收起」）
 │   ├── ToolCallMark.tsx       # 搜索等：绑定 tool_result_meta
 │   ├── RagCitation.tsx        # RAG：绑定 citation + 正文 <rag>
 │   └── ChatStatusIndicator.tsx # 「正在搜索…」「深度研究中…」等（intention / 工具起止）
@@ -310,7 +312,8 @@ frontend/src/components/
 │   ├── TaskSidebar.tsx        # 列表、筛选、快捷插入
 │   ├── TaskItem.tsx
 │   └── TaskDetailPanel.tsx    # 展开任务 detail / 子任务信息
-├── files/                     # 工作空间（对应 frontend/src/pages/Files/）
+├── files/                     # 工作空间面板组件（由 Chat 页 Dock 引用；`pages/Files` 可仅为重定向）
+│   ├── FileWorkspacePanel.tsx # Dock 内：工具栏 + 左树右上传
 │   ├── FileList.tsx           # 列表/网格、排序与筛选入口
 │   ├── FileCard.tsx           # tags、folder_path、processed（0/1/-1）
 │   ├── FolderBreadcrumb.tsx   # 与 GET ?folder= 前缀一致（可选）
@@ -344,7 +347,7 @@ frontend/src/components/
 
 #### 6.2.4 上传流程（PRD 2.5.2 / 2.5.3）
 
-- **选择文件后**：校验 **`file.size <= 64 * 1024 * 1024`**，否则 toast 提示并中止（PRD 约束）。
+- **选择文件后**：校验 **`file.size <= MAX_FILE_BYTES`**（与后端一致，当前 **10MB**），否则 toast 提示并中止。
 - **弹窗**：必填语义类型；可选 **folder_path**、初始 **tags**。
 - **小文件**：`FormData` → `POST /api/files/upload`；**大文件**：`initiate-multipart` → XHR 分片 PUT 预签名 URL → **`complete-multipart` 携带 `upload_id`、`r2_key`、`parts`**（与后端一致）。
 - **成功/失败**：虚线/实线/红框、进度条；**toast + 可选 `Notification`**（用户授权后）。
@@ -356,8 +359,8 @@ frontend/src/components/
 
 #### 6.2.6 主对话区与侧栏会话（PRD v1.2 §2.1、§2.9）
 
-- **布局**：中间主栏仅保留 **单列消息流 + 底部输入**，视觉权重参考 [DeepSeek Chat](https://chat.deepseek.com/)（宽屏居中、留白与层次清晰）；任务/文件入口仍在侧栏或顶栏，**不把任务列表挤占主对话区**。
-- **侧栏**：「对话」菜单项下为 **可折叠面板**，内嵌 `SessionList`；展开时展示按 `updated_at` 排序的会话行，**当前 `sessionId` 高亮**。
+- **布局**：中间主栏为 **单列消息流 + 底部输入**；其下为 **`ChatWorkspaceDock`**（可折叠、可拖拽高度，持久化高度），内嵌 `FileWorkspacePanel`（目录树 + 上传）。视觉权重参考 [DeepSeek Chat](https://chat.deepseek.com/)（宽屏居中、留白与层次清晰）；**不把任务列表挤占主对话区**。
+- **侧栏**：「对话」菜单项下为 **可折叠面板**，内嵌 `SessionList`；展开时展示按 `updated_at` 排序的会话行，**当前 `sessionId` 高亮**。**不**提供侧栏「工作空间」导航项；**Dock 默认收起**（`workspaceDockCollapsed: true`），用户点击 **收起条**（悬浮提示「点击展开」）后展开；展开/收起写入 **`ai-bot-ui` 持久化**，回访用户保持个人习惯。
 - **切换**：点击会话 → `setSessionId` → `GET .../messages` 填充 `MessageList`；发送新消息时 `useChatStream` 使用同一 `session_id`。
 - **新会话**：提供「新对话」入口 → `POST /api/sessions` 后选中新 `id`。
 - **右键重命名**：`SessionListItem` 上 `onContextMenu` 弹出菜单（浏览器原生或自定义），选「修改名称」→ 行内切换为 `SessionRenameInline`，`PATCH` 成功后更新 Store 与列表。
@@ -407,7 +410,7 @@ interface UiState {
 | 路径 | 页面组件 | 权限 | 说明 |
 |------|----------|------|------|
 | `/` | `Chat` | 需登录 | 对话首页 |
-| `/files` | `FileWorkspace` | 需登录 | 个人工作空间 |
+| `/files` | `FileWorkspace`（通常 `Navigate` 至 `/`） | 需登录 | 兼容书签；实际工作区在对话页 Dock |
 | `/settings` | `Settings` | 需登录 | 用户、**偏好**、AI 昵称 |
 | `/login` | `Login` | 未登录可访问 | **匿名昵称登录**（名称必填、邮箱选填、`authAPI.login`）；**科技感落地视觉**（§6.2.7） |
 
@@ -439,7 +442,7 @@ interface UiState {
 | 场景 | 处理方式 |
 |------|----------|
 | **网络断开** | 全局提示；对话输入可禁用；文件列表展示缓存 |
-| **API 错误** | Toast；**413** 明确提示「单文件不超过 64MB」 |
+| **API 错误** | Toast；**413** 明确提示「单文件不超过 10MB」 |
 | **上传失败** | 红框节点、原因文案、重试/删除（PRD 2.5.3） |
 | **搜索限流/降级** | 展示后端返回文案；不阻断其它对话能力（PRD 3.5.3） |
 | **对话流中断** | 有限自动重试 + 手动重发 |
@@ -454,7 +457,7 @@ interface UiState {
 | 条件 | 行为 |
 |------|------|
 | `file.size <= 5MB`（与后端约定一致） | `multipart/form-data` → `POST /api/files/upload`；XHR `upload.onprogress` |
-| 更大且 `<= 64MB` | `initiate-multipart` → 分片 XHR → `complete-multipart`（**body 含 `r2_key`**，来自 initiate 响应） |
+| 更大且 `<= 10MB` | `initiate-multipart` → 分片 XHR → `complete-multipart`（**body 含 `r2_key`**，来自 initiate 响应） |
 
 ### 11.2 分片流程要点
 
@@ -547,7 +550,7 @@ interface UiState {
 
 | 测试类型 | 工具 | 覆盖范围 |
 |----------|------|----------|
-| **单元测试** | Vitest | SSE 解析、上传状态机、64MB 校验 |
+| **单元测试** | Vitest | SSE 解析、上传状态机、10MB 上限校验 |
 | **组件测试** | RTL | Message + Citation、FileCard processed 态 |
 | **E2E** | Playwright | 匿名登录（新/回访）、会话切换与历史、右键重命名、对话流、分片上传、tags、设置 preferences |
 
@@ -557,7 +560,7 @@ interface UiState {
 
 ## 15. 总结
 
-本方案以 **React + TypeScript + Vite + Tailwind** 实现 **PRD v1.2** 对话布局（DeepSeek 式主区 + 可折叠会话列表）、匿名登录与 **session 维度历史**；**流式层、§5.0/5.1.1 会话 API、文件 API** 与后端 `tech_design_ai_bot_v1_2.md` 对齐，**SSE 扩展事件**满足搜索/RAG 悬停展示。实现时若后端字段或事件有变更，应**以仓库内后端设计为单一事实来源**并同步调整前端类型与 Hook。
+本方案以 **React + TypeScript + Vite + Tailwind** 实现 **PRD v1.2** 对话布局（DeepSeek 式主区 + 可折叠会话列表）、**对话页底部工作空间 Dock**（树 + 上传、图标与悬浮文案交互）、匿名登录与 **session 维度历史**；**流式层、§5.0/5.1.1 会话 API、文件 API** 与后端 `tech_design_ai_bot_v1_2.md` 对齐（含 **10MB** 单文件上限），**SSE 扩展事件**满足搜索/RAG 悬停展示。实现时若后端字段或事件有变更，应**以仓库内后端设计为单一事实来源**并同步调整前端类型与 Hook。
 
 ---
 

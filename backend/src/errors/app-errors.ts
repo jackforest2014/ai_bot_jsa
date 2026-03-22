@@ -60,7 +60,7 @@ export class LLMError extends AppError {
   }
 }
 
-/** 单文件超过上限（如 PRD 64MB） */
+/** 单文件超过上限（与前后端 MAX_FILE_BYTES 一致，当前 10MB） */
 export class FileSizeError extends AppError {
   constructor(
     message: string,

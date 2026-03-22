@@ -8,7 +8,10 @@ info:
 
     **SSE 对话**：`POST /api/chat/stream` 返回 `text/event-stream`；帧格式为 `event: <名称>` + `data: <JSON>` + 空行。事件类型见下方该路径说明及 `GET /health/sse-chat`。
 
+    **多 Agent 编排**（Worker 环境变量，非本请求 body/query）：`ORCHESTRATION_ENABLED` 为真时走编排分解与 Task/Route 专责轮；可选 `TASK_AGENT_GOT_ENABLED` / `ROUTE_AGENT_GOT_ENABLED`（编排内嵌 GOT，多轮 LLM）。详见 `docs/orchestration/product-rules.md`、`docs/tasks/tasks_backend_multi_agent_orchestration.md`。
+
     **管理 Prompt**：`/api/prompts/*` 需配置 Worker 环境变量 `ADMIN_API_SECRET`，并使用 `Authorization: Bearer <ADMIN_API_SECRET>` 或 `X-Admin-Token: <ADMIN_API_SECRET>`。
+    **管理员删用户（Demo）**：`POST /api/admin/users/purge-by-name` 按 **`users.name`（显示名）** 物理删除 **`users` 主表行** 及关联数据（D1 子表多随外键级联）；**当前实现不要求鉴权**，勿对公网开放；其它管理接口仍须 `ADMIN_API_SECRET`。
   version: 1.2.0
 
 servers:
@@ -182,6 +185,28 @@ components:
         template_text: { type: string }
         scenario: { type: string }
         created_at: { type: integer, format: int64 }
+
+    AdminPurgeUserByNameRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: 用户显示名，对应 `users.name`（表内唯一）
+
+    AdminPurgeUserByNameResponse:
+      type: object
+      properties:
+        ok: { type: boolean, enum: [true] }
+        user_id: { type: string }
+        user_name: { type: string }
+        files_removed_from_db: { type: integer }
+        r2_delete_errors: { type: integer, description: R2 删除失败次数（无绑定或异常时仍会从 D1 删元数据） }
+        qdrant_purged:
+          type: boolean
+          nullable: true
+          description: true=已按 user_id 删点；false=调用失败；null=未配置 Qdrant
+        qdrant_error: { type: string, description: 仅失败时返回 }
 
 paths:
   /health:
@@ -435,6 +460,8 @@ paths:
         ```
 
         错误时可能返回 `application/json`（如 400/401/404/503）而非 SSE。
+
+        **编排相关 SSE**（仅 `ORCHESTRATION_ENABLED` 开启且分解为多步时常见）：`orchestrator_plan`、`orchestrator_progress`；`token` 可带 `source`：`orchestrator` | `task_agent` | `route_agent`（与 `backend/src/chat/sse-contract.ts` 一致）。
       requestBody:
         required: true
         content:
@@ -822,6 +849,38 @@ paths:
       responses:
         '200':
           description: OK
+
+  /api/admin/users/purge-by-name:
+    post:
+      tags: [PromptsAdmin]
+      summary: 按显示名删除用户全部数据（危险，Demo 无鉴权）
+      description: |
+        请求体 `name` 为 **`users.name`（显示名，唯一）**，非 JWT 里的 id。
+        先清理 `file_uploads`（含 R2）、`serper_usage`、Qdrant 中 `payload.user_id` 匹配的点；
+        **最后执行对 `users` 表的删除**（`users.id` 对应行），会话/对话/任务/项目/工具审计等 D1 子表多随 **ON DELETE CASCADE** 一并删除。
+        **当前为 Demo：不要求 Authorization**；勿将 Worker 暴露公网；上线前应恢复与 `/api/prompts` 相同的管理员鉴权。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminPurgeUserByNameRequest' }
+      responses:
+        '200':
+          description: 已删除
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPurgeUserByNameResponse' }
+        '400':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorBody' }
+        '401':
+          description: 未授权
+        '404':
+          description: 不存在该姓名的用户（USER_NOT_FOUND）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorBody' }
 
   /api/prompts:
     get:

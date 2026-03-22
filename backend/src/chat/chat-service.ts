@@ -5,7 +5,7 @@ import type { ConversationRepository, ConversationRow, SessionRepository } from 
 import type { IntentClassifier } from '../intent';
 import type { MemoryService } from '../memory/memory-service';
 import { PromptService } from '../prompt';
-import { ToolRegistry } from '../tools/tool-registry';
+import { ToolRegistry, toolCallKey } from '../tools/tool-registry';
 import { logger } from '../lib/logger';
 import { recordMetric } from '../observability/metrics';
 import { conversationRowsToLlmMessages } from './history-for-llm';
@@ -14,6 +14,7 @@ import { wantsWebImageSearch } from './detect-web-image-intent';
 import { formatSystemClockBlock } from './system-clock-block';
 import { clampSessionTitle, SESSION_TITLE_MAX_LEN } from '../lib/session-title';
 import {
+  mergeTaskMutationStateAfterExecute,
   pickTaskMutationToolDefinitions,
   resolveTaskMutationSignal,
   taskMutationKeywordMatch,
@@ -22,6 +23,16 @@ import {
   parseSearchImagesAllowlistFromToolJson,
   sanitizeMarkdownImagesToAllowlist,
 } from './sanitize-web-search-images';
+import {
+  buildOrchestrationTaskAgentSystemAppend,
+  ORCHESTRATION_TASK_AGENT_FORCE_FIRST_APPEND,
+  pickOrchestrationTaskAgentToolDefinitions,
+} from './orchestration-task-agent';
+import { buildOrchestrationRouteAgentSystemBlock } from './orchestration-route-agent';
+import { scanOrchestrationTaskPhaseGateSuccess } from './orchestration-route-phase';
+import { formatGotBlockForSystem, runGraphOfThoughtsLite } from '../lib/graph-of-thoughts-lite';
+import { reduceTaskAgentGateAfterTool } from '../orchestration/task-agent-state';
+import { ORCHESTRATION_METRICS } from '../orchestration/metric-names';
 
 const MAX_REACT_ITERATIONS = 10;
 
@@ -31,7 +42,11 @@ const TASK_TOOLS_WITH_SSE_META = new Set([
   'list_tasks',
   'update_task',
   'delete_task',
+  'confirm_tool_creation',
 ]);
+
+const TASK_AGENT_TERMINAL_MESSAGE =
+  '任务写入多次校验仍未成功，请稍后在侧栏任务列表中核对；本次不再继续后续路线等步骤。';
 
 const ROUTE_QUERY_TOOL_CITATION_HINT =
   '\n\n【路线查询补充】若已调用 amap_ 开头工具，请在最终回答中于路线说明、链接或图片旁明确写出所用工具名（如「（工具：amap_route_plan）」），与系统对路线场景的要求一致。\n';
@@ -81,6 +96,34 @@ export type ChatStreamParams = {
   sessionId: string;
   sessionTitleSource: 'auto' | 'user';
   waitUntil?: (p: Promise<unknown>) => void;
+  /** 多 Agent 编排注入：追加到 system 末尾（见 OrchestrationService） */
+  orchestrationSystemAppend?: string;
+  /**
+   * 编排 Task Agent：首步为 task 时由 OrchestrationService 注入；收窄首轮工具、强制 function call、
+   * add→confirm 门禁与顺序执行（阶段 3）。
+   */
+  orchestrationTaskAgent?: {
+    correlationId: string;
+    stepId: string;
+    stepSummary: string;
+  };
+  /**
+   * 编排 Route Agent（阶段 4）：计划中含 `route` 步时由 OrchestrationService 注入。
+   * `planStepIndex`：该 route 步在分解 `steps` 中的下标（首步路线为 0）。
+   */
+  orchestrationRouteAgent?: {
+    correlationId: string;
+    stepId: string;
+    stepSummary: string;
+    planStepIndex: number;
+  };
+  /** 阶段 5：编排内 GOT；由 Worker 根据 env 注入 */
+  orchestrationGot?: {
+    taskAgent: boolean;
+    routeAgent: boolean;
+  };
+  /** 编排单次请求的 correlation_id（埋点） */
+  orchestrationCorrelationId?: string;
 };
 
 function buildTranscriptSnippets(rows: ConversationRow[], maxPerMsg: number): string {
@@ -167,7 +210,18 @@ export class ChatService {
    * 返回 UTF-8 字节流：SSE 事件序列（status / token 随 Gemini 流式增量 / tool_call / citation / intention / done）。
    */
   handleMessageStream(params: ChatStreamParams): ReadableStream<Uint8Array> {
-    const { user, userInput, sessionId, sessionTitleSource, waitUntil } = params;
+    const {
+      user,
+      userInput,
+      sessionId,
+      sessionTitleSource,
+      waitUntil,
+      orchestrationSystemAppend,
+      orchestrationTaskAgent: oTaskAgent,
+      orchestrationRouteAgent: oRouteAgent,
+      orchestrationGot,
+      orchestrationCorrelationId,
+    } = params;
     const encoder = new TextEncoder();
 
     return new ReadableStream({
@@ -213,27 +267,48 @@ export class ChatService {
           const amapDefs = allTools.filter((t) => t.name.startsWith('amap_'));
           /** 路线意图且已配置高德：提示词与首轮 API 仅暴露 amap_*；同句含日程/会面等时不独占（见 taskMutationKeywordMatch） */
           const taskKeywordMatch = taskMutationKeywordMatch(userInput);
-          const routeAmapMode =
+          const routeAmapModeRaw =
             intention === 'route_query' && amapDefs.length > 0 && !taskKeywordMatch;
           /** 联网找图且已注册 Serper：首轮仅暴露 search + 强制 function call，避免模型纯文本拒答 */
-          const webImageSearchForceMode =
+          const webImageSearchForceModeRaw =
             serperSearchRegistered &&
             searchDefs.length > 0 &&
             wantsWebImageSearch(userInput) &&
-            !routeAmapMode;
+            !routeAmapModeRaw;
+          const orchTaskDefs = pickOrchestrationTaskAgentToolDefinitions(allTools);
+          const orchestrationTaskAgentMode = !!oTaskAgent;
+          const routePlanIndex = oRouteAgent?.planStepIndex ?? -1;
+          const hasOrchestrationRoute = !!oRouteAgent && routePlanIndex >= 0;
+          /** 分解首步即为路线：编排强制首轮高德独占（可压过意图未判成 route_query 的情况） */
+          const orchestrationRouteFirstExclusive =
+            hasOrchestrationRoute &&
+            routePlanIndex === 0 &&
+            amapDefs.length > 0 &&
+            !orchestrationTaskAgentMode;
+          /** 编排 Task Agent 时禁止高德 / 联网找图首轮独占，否则无法收窄任务工具；编排路线首步时禁止联网找图首轮 */
+          const routeAmapMode =
+            !orchestrationTaskAgentMode &&
+            amapDefs.length > 0 &&
+            (orchestrationRouteFirstExclusive || (intention === 'route_query' && !taskKeywordMatch));
+          const webImageSearchForceMode =
+            orchestrationTaskAgentMode || orchestrationRouteFirstExclusive
+              ? false
+              : webImageSearchForceModeRaw;
           const taskToolDefs = pickTaskMutationToolDefinitions(allTools);
+          const taskForceRound0Defs = orchestrationTaskAgentMode ? orchTaskDefs : taskToolDefs;
           const taskMutSig = resolveTaskMutationSignal(userInput, intention);
-          const taskMutationForceMode =
-            !routeAmapMode &&
-            !webImageSearchForceMode &&
-            taskToolDefs.length > 0 &&
-            taskMutSig.force;
+          const taskMutationForceMode = orchestrationTaskAgentMode
+            ? orchTaskDefs.length > 0
+            : !routeAmapMode &&
+              !webImageSearchForceMode &&
+              taskToolDefs.length > 0 &&
+              taskMutSig.force;
           const toolsForPrompt = routeAmapMode
             ? amapDefs
             : webImageSearchForceMode
               ? searchDefs
               : taskMutationForceMode
-                ? taskToolDefs
+                ? taskForceRound0Defs
                 : allTools;
           let systemPrompt = this.promptService.render(template.template_text, {
             userName: user.name,
@@ -248,7 +323,7 @@ export class ChatService {
             gaps.push('希望被如何称呼（若与当前显示名不同）');
             systemPrompt += `\n\n【首轮资料引导】当前可能缺失或可确认项：${gaps.join('、')}。请在本回复中同时回应用户的实质需求；若用户尚未提供上列信息，用一两句自然话询问；若用户已在本条消息中说明，则不要重复追问。\n`;
           }
-          if (intention === 'route_query') {
+          if (intention === 'route_query' || hasOrchestrationRoute) {
             systemPrompt += ROUTE_QUERY_TOOL_CITATION_HINT;
           }
           /** 置首：避免长模板淹没，降低模型仍按「训练截止年」拒答的概率 */
@@ -264,14 +339,33 @@ export class ChatService {
             systemPrompt += WEB_IMAGE_FORCE_SYSTEM_APPEND;
           }
           if (taskMutationForceMode) {
-            systemPrompt += TASK_MUTATION_FORCE_FIRST_APPEND;
+            systemPrompt += orchestrationTaskAgentMode
+              ? ORCHESTRATION_TASK_AGENT_FORCE_FIRST_APPEND
+              : TASK_MUTATION_FORCE_FIRST_APPEND;
           }
           if (toolsForPrompt.some((t) => ['add_task', 'update_task', 'delete_task'].includes(t.name))) {
             systemPrompt += TASK_MUTATION_SYSTEM_APPEND;
           }
+          if (orchestrationTaskAgentMode && oTaskAgent) {
+            systemPrompt += buildOrchestrationTaskAgentSystemAppend(oTaskAgent.stepId, oTaskAgent.stepSummary);
+          }
+          if (oRouteAgent) {
+            systemPrompt += buildOrchestrationRouteAgentSystemBlock(
+              oRouteAgent.stepId,
+              oRouteAgent.stepSummary,
+            );
+          }
+          if (orchestrationSystemAppend?.trim()) {
+            systemPrompt += orchestrationSystemAppend.trim();
+          }
           dbg('system_prompt_built', {
             toolCount: toolsForPrompt.length,
             routeAmapMode,
+            orchestrationTaskAgentMode,
+            orchestrationRouteAgent: !!oRouteAgent,
+            orchestrationRouteFirstExclusive,
+            orchestrationGotTask: !!orchestrationGot?.taskAgent,
+            orchestrationGotRoute: !!orchestrationGot?.routeAgent,
             taskKeywordMatch,
             webImageSearchForceMode,
             taskMutationForceMode,
@@ -279,6 +373,34 @@ export class ChatService {
             systemChars: systemPrompt.length,
             serperSearchRegistered,
           });
+
+          if (orchestrationTaskAgentMode && oTaskAgent && orchestrationGot?.taskAgent) {
+            const t0got = Date.now();
+            try {
+              const got = await runGraphOfThoughtsLite(this.llm, {
+                problem: `用户原话与任务子步：\n${userInput}\n子步摘要：${oTaskAgent.stepSummary}`,
+                iterations: 3,
+              });
+              const block = formatGotBlockForSystem(got);
+              if (block) systemPrompt += `\n\n${block}`;
+              recordMetric(ORCHESTRATION_METRICS.GOT_TASK, {
+                user_id: user.id,
+                session_id: sessionId,
+                correlation_id: orchestrationCorrelationId ?? oTaskAgent.correlationId,
+                duration_ms: Date.now() - t0got,
+                iterations_used: got.iterationsUsed,
+                ok: true,
+              });
+            } catch (e) {
+              recordMetric(ORCHESTRATION_METRICS.GOT_TASK, {
+                user_id: user.id,
+                session_id: sessionId,
+                correlation_id: orchestrationCorrelationId ?? oTaskAgent.correlationId,
+                ok: false,
+                error: e instanceof Error ? e.message : String(e),
+              });
+            }
+          }
 
           let ragBlock = '';
           if (this.memoryService) {
@@ -351,32 +473,138 @@ export class ChatService {
           let stalledOnTools = false;
           /** 联网找图：最近一次 `search` 工具 JSON 中的 `image_url` 白名单；服务端据此剔除背诵图链 */
           let webImageMarkdownAllowlist: string[] | null = null;
+          let taskAgentGate = { unconfirmedAddTaskId: null as string | null, confirmRetryCount: 0 };
+          let taskAgentTerminal = false;
+          let routeDeferredTargetRound: number | null = null;
+          let routeDeferredConsumed = false;
+          let orchestrationTaskPhaseEverSucceeded = false;
+          let routeAgentStartEmitted = false;
+          let routeGotInjected = false;
+          let taskMutationRoundState = { calendarPrimed: false, writeDone: false };
 
           for (let round = 0; round < MAX_REACT_ITERATIONS; round++) {
+            const routeDeferredExclusiveNow =
+              hasOrchestrationRoute &&
+              routePlanIndex > 0 &&
+              routeDeferredTargetRound !== null &&
+              routeDeferredTargetRound === round &&
+              amapDefs.length > 0 &&
+              !routeDeferredConsumed &&
+              !taskAgentTerminal;
+
+            const routeExclusiveThisRound =
+              !taskAgentTerminal &&
+              ((routeDeferredExclusiveNow && amapDefs.length > 0) ||
+                (round === 0 && orchestrationRouteFirstExclusive && amapDefs.length > 0));
+
+            const taskMutationDefsOk = taskForceRound0Defs.length > 0;
+            const nonOrchTaskMutationExtended =
+              taskMutationForceMode &&
+              !orchestrationTaskAgentMode &&
+              taskMutationDefsOk &&
+              taskMutationRoundState.calendarPrimed &&
+              !taskMutationRoundState.writeDone;
+            const orchTaskMutationExtended =
+              orchestrationTaskAgentMode &&
+              taskMutationForceMode &&
+              taskMutationDefsOk &&
+              !orchestrationTaskPhaseEverSucceeded;
+            const taskToolNarrowAndRequired =
+              taskMutationForceMode &&
+              taskMutationDefsOk &&
+              (round === 0 ||
+                (round > 0 && (nonOrchTaskMutationExtended || orchTaskMutationExtended)));
+
             const roundDefs =
-              round === 0 && routeAmapMode && amapDefs.length
+              routeDeferredExclusiveNow && amapDefs.length
                 ? amapDefs
-                : round === 0 && webImageSearchForceMode && searchDefs.length
-                  ? searchDefs
-                  : round === 0 && taskMutationForceMode && taskToolDefs.length
-                    ? taskToolDefs
-                    : allDefs;
+                : round === 0 && routeAmapMode && amapDefs.length
+                  ? amapDefs
+                  : round === 0 && webImageSearchForceMode && searchDefs.length
+                    ? searchDefs
+                    : taskToolNarrowAndRequired
+                      ? taskForceRound0Defs
+                      : allDefs;
             const streamOpts =
-              routeAmapMode && round === 0 && amapDefs.length
+              routeDeferredExclusiveNow && amapDefs.length
                 ? { toolChoice: 'required' as const }
-                : webImageSearchForceMode && round === 0 && searchDefs.length
+                : routeAmapMode && round === 0 && amapDefs.length
                   ? { toolChoice: 'required' as const }
-                  : taskMutationForceMode && round === 0 && taskToolDefs.length
+                  : webImageSearchForceMode && round === 0 && searchDefs.length
                     ? { toolChoice: 'required' as const }
-                    : undefined;
+                    : taskToolNarrowAndRequired
+                      ? { toolChoice: 'required' as const }
+                      : undefined;
+
+            if (
+              routeExclusiveThisRound &&
+              oRouteAgent &&
+              orchestrationGot?.routeAgent &&
+              !routeGotInjected
+            ) {
+              routeGotInjected = true;
+              const t0got = Date.now();
+              try {
+                const got = await runGraphOfThoughtsLite(this.llm, {
+                  problem: `用户原话与路线子步：\n${userInput}\n路线摘要：${oRouteAgent.stepSummary}`,
+                  iterations: 2,
+                });
+                const block = formatGotBlockForSystem(got, 1500, 3000);
+                if (block) {
+                  messages.splice(1, 0, { role: 'system', content: block });
+                }
+                recordMetric(ORCHESTRATION_METRICS.GOT_ROUTE, {
+                  user_id: user.id,
+                  session_id: sessionId,
+                  correlation_id: orchestrationCorrelationId ?? oRouteAgent.correlationId,
+                  duration_ms: Date.now() - t0got,
+                  iterations_used: got.iterationsUsed,
+                  round,
+                  ok: true,
+                });
+              } catch (e) {
+                recordMetric(ORCHESTRATION_METRICS.GOT_ROUTE, {
+                  user_id: user.id,
+                  session_id: sessionId,
+                  correlation_id: orchestrationCorrelationId ?? oRouteAgent.correlationId,
+                  round,
+                  ok: false,
+                  error: e instanceof Error ? e.message : String(e),
+                });
+              }
+            }
+
+            if (routeExclusiveThisRound && oRouteAgent && !routeAgentStartEmitted) {
+              routeAgentStartEmitted = true;
+              recordMetric(ORCHESTRATION_METRICS.ROUTE_AGENT_START, {
+                user_id: user.id,
+                session_id: sessionId,
+                correlation_id: oRouteAgent.correlationId,
+                round,
+                deferred: routePlanIndex > 0,
+              });
+              send('orchestrator_progress', {
+                correlation_id: oRouteAgent.correlationId,
+                schema_version: 1,
+                phase: 'route_agent',
+                step_id: oRouteAgent.stepId,
+                message:
+                  routePlanIndex === 0
+                    ? '路线子步骤：收窄为高德工具并规划出行。'
+                    : '任务阶段已满足约定条件，进入路线子步骤（高德工具）。',
+                level: 'info',
+              });
+            }
+
             send('status', { phase: 'model_generating' });
             dbg('llm_stream_request', {
               round,
               messageCount: messages.length,
               hasTools: !!roundDefs?.length,
               routeAmapFirstRound: !!streamOpts && routeAmapMode && round === 0,
+              routeDeferredExclusiveNow,
               webImageSearchForceFirstRound: !!streamOpts && webImageSearchForceMode && round === 0,
-              taskMutationForceFirstRound: !!streamOpts && taskMutationForceMode && round === 0,
+              taskMutationForceThisRound: !!streamOpts && taskToolNarrowAndRequired,
             });
             const shouldSanitizeWebImages =
               webImageSearchForceMode && webImageMarkdownAllowlist !== null && round >= 1;
@@ -394,6 +622,14 @@ export class ChatService {
                 },
               );
             }
+            if (orchestrationTaskAgentMode && oTaskAgent) {
+              recordMetric(ORCHESTRATION_METRICS.TASK_AGENT_ROUND, {
+                user_id: user.id,
+                session_id: sessionId,
+                correlation_id: oTaskAgent.correlationId,
+                round,
+              });
+            }
             const llmT = Date.now();
             const response = await this.llm.chatStream(
               messages,
@@ -403,7 +639,18 @@ export class ChatService {
                     if (delta) streamBuf += delta;
                   }
                 : (delta) => {
-                    if (delta) send('token', { content: delta });
+                    if (delta) {
+                      const src =
+                        orchestrationTaskAgentMode && oTaskAgent
+                          ? 'task_agent'
+                          : routeExclusiveThisRound && oRouteAgent
+                            ? 'route_agent'
+                            : undefined;
+                      send(
+                        'token',
+                        src ? { content: delta, source: src } : { content: delta },
+                      );
+                    }
                   },
               streamOpts,
             );
@@ -415,7 +662,7 @@ export class ChatService {
               duration_ms: llmMs,
               tool_calls: response.tool_calls?.length ?? 0,
               text_chars: (response.content ?? '').length,
-              ...(taskMutationForceMode && round === 0 ? { task_mutation_force: true } : {}),
+              ...(taskToolNarrowAndRequired ? { task_mutation_force: true } : {}),
             });
             dbg('llm_stream_done', {
               round,
@@ -448,10 +695,124 @@ export class ChatService {
             }
 
             send('status', { phase: 'tools_running' });
-            const executed = await this.toolRegistry.executeAll(response.tool_calls, {
-              userId: user.id,
-              sessionId,
-            });
+            const toolCtx = { userId: user.id, sessionId };
+            let executed: Awaited<ReturnType<ToolRegistry['executeAll']>>;
+            if (orchestrationTaskAgentMode) {
+              executed = [];
+              for (const call of response.tool_calls) {
+                if (taskAgentTerminal) {
+                  executed.push({
+                    name: call.name,
+                    geminiToolCallId: toolCallKey(call.name, call.id),
+                    output: JSON.stringify({
+                      ok: false,
+                      error: 'task_agent_phase_aborted',
+                    }),
+                  });
+                  continue;
+                }
+                if (call.name === 'add_task' && taskAgentGate.unconfirmedAddTaskId) {
+                  executed.push({
+                    name: call.name,
+                    geminiToolCallId: toolCallKey(call.name, call.id),
+                    output: JSON.stringify({
+                      ok: false,
+                      error: 'confirm_pending_before_new_add',
+                      pending_task_id: taskAgentGate.unconfirmedAddTaskId,
+                      hint: '请先对上一轮 add_task 返回的 task.id 调用 confirm_tool_creation；若 confirm 为 ok:true 则禁止再次 add_task。',
+                    }),
+                  });
+                } else {
+                  const one = await this.toolRegistry.executeCall(call, toolCtx);
+                  executed.push(one);
+                }
+                const last = executed[executed.length - 1]!;
+                const red = reduceTaskAgentGateAfterTool(
+                  taskAgentGate,
+                  { name: call.name, arguments: call.arguments },
+                  last.output,
+                );
+                taskAgentGate = red.next;
+                if (red.confirmNotFoundRetry && oTaskAgent) {
+                  recordMetric(ORCHESTRATION_METRICS.CONFIRM_TASK_RETRY, {
+                    user_id: user.id,
+                    session_id: sessionId,
+                    correlation_id: oTaskAgent.correlationId,
+                    attempt: taskAgentGate.confirmRetryCount,
+                  });
+                  send('orchestrator_progress', {
+                    correlation_id: oTaskAgent.correlationId,
+                    schema_version: 1,
+                    phase: 'task_agent',
+                    step_id: oTaskAgent.stepId,
+                    attempt: taskAgentGate.confirmRetryCount,
+                    message: '任务落库校验未通过，正在按策略重试写入。',
+                    level: 'warn',
+                  });
+                }
+                if (red.terminalMaxRetries && oTaskAgent) {
+                  taskAgentTerminal = true;
+                  send('orchestrator_progress', {
+                    correlation_id: oTaskAgent.correlationId,
+                    schema_version: 1,
+                    phase: 'task_agent',
+                    step_id: oTaskAgent.stepId,
+                    attempt: taskAgentGate.confirmRetryCount,
+                    message: TASK_AGENT_TERMINAL_MESSAGE,
+                    level: 'error',
+                  });
+                }
+              }
+            } else {
+              executed = await this.toolRegistry.executeAll(response.tool_calls, toolCtx);
+            }
+
+            orchestrationTaskPhaseEverSucceeded ||= scanOrchestrationTaskPhaseGateSuccess(
+              response.tool_calls,
+              executed,
+            );
+            if (taskMutationForceMode && !orchestrationTaskAgentMode) {
+              taskMutationRoundState = mergeTaskMutationStateAfterExecute(
+                taskMutationRoundState,
+                response.tool_calls,
+                executed,
+              );
+            }
+            if (
+              oTaskAgent &&
+              oRouteAgent &&
+              oRouteAgent.planStepIndex > 0 &&
+              routeDeferredTargetRound === null &&
+              !routeDeferredConsumed &&
+              !taskAgentTerminal &&
+              orchestrationTaskPhaseEverSucceeded &&
+              taskAgentGate.unconfirmedAddTaskId === null
+            ) {
+              routeDeferredTargetRound = round + 1;
+            }
+
+            if (routeDeferredExclusiveNow && oRouteAgent) {
+              routeDeferredConsumed = true;
+              recordMetric(ORCHESTRATION_METRICS.ROUTE_AGENT_COMPLETE, {
+                user_id: user.id,
+                session_id: sessionId,
+                correlation_id: oRouteAgent.correlationId,
+                pass: 'deferred_exclusive',
+              });
+            }
+            if (
+              round === 0 &&
+              orchestrationRouteFirstExclusive &&
+              oRouteAgent &&
+              (response.tool_calls?.length ?? 0) > 0
+            ) {
+              recordMetric(ORCHESTRATION_METRICS.ROUTE_AGENT_COMPLETE, {
+                user_id: user.id,
+                session_id: sessionId,
+                correlation_id: oRouteAgent.correlationId,
+                pass: 'route_first_round0',
+              });
+            }
 
             for (let i = 0; i < response.tool_calls.length; i++) {
               const call = response.tool_calls[i]!;
@@ -483,6 +844,16 @@ export class ChatService {
                 content: result.output,
                 tool_call_id: result.geminiToolCallId,
               });
+            }
+
+            if (taskAgentTerminal) {
+              finalText = TASK_AGENT_TERMINAL_MESSAGE;
+              stalledOnTools = false;
+              send('token', {
+                content: `${TASK_AGENT_TERMINAL_MESSAGE}\n`,
+                source: 'task_agent',
+              });
+              break;
             }
           }
 

@@ -26,7 +26,7 @@ vi.mock('@/router/guards', () => ({
 }))
 
 describe('useFileUpload', () => {
-  it('sets error state when file exceeds 64MB', async () => {
+  it('sets error state when file exceeds 10MB', async () => {
     const { result } = renderHook(() => useFileUpload())
     const buf = new ArrayBuffer(MAX_FILE_BYTES + 1)
     const file = new File([buf], 'huge.bin', { type: 'application/octet-stream' })
@@ -38,7 +38,7 @@ describe('useFileUpload', () => {
     await waitFor(() => {
       expect(result.current.items).toHaveLength(1)
       expect(result.current.items[0]?.status).toBe('error')
-      expect(result.current.items[0]?.errorMessage).toMatch(/64/)
+      expect(result.current.items[0]?.errorMessage).toMatch(/10/)
     })
   })
 

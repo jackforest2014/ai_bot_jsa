@@ -16,6 +16,10 @@ interface UiStoreState {
   sidebarCollapsed: boolean
   /** 「对话」下会话列表面板展开（与侧栏整体折叠独立，任务 4.4） */
   sessionListPanelOpen: boolean
+  /** 底部「工作空间」面板是否收起为一行（持久化） */
+  workspaceDockCollapsed: boolean
+  setWorkspaceDockCollapsed: (v: boolean) => void
+  toggleWorkspaceDock: () => void
   notifications: UiNotification[]
   chatStatus: ChatStatus
   setGlobalLoading: (v: boolean) => void
@@ -42,6 +46,7 @@ export const useUiStore = create<UiStoreState>()(
       globalLoading: false,
       sidebarCollapsed: false,
       sessionListPanelOpen: true,
+      workspaceDockCollapsed: true,
       notifications: [],
       chatStatus: 'idle',
       setGlobalLoading: (globalLoading) => set({ globalLoading }),
@@ -49,6 +54,8 @@ export const useUiStore = create<UiStoreState>()(
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       toggleSessionListPanel: () => set((s) => ({ sessionListPanelOpen: !s.sessionListPanelOpen })),
       setSessionListPanelOpen: (sessionListPanelOpen) => set({ sessionListPanelOpen }),
+      setWorkspaceDockCollapsed: (workspaceDockCollapsed) => set({ workspaceDockCollapsed }),
+      toggleWorkspaceDock: () => set((s) => ({ workspaceDockCollapsed: !s.workspaceDockCollapsed })),
       enqueueNotification: (item) =>
         set((s) => ({
           notifications: [...s.notifications, { ...item, id: item.id ?? nextId() }],
@@ -63,6 +70,7 @@ export const useUiStore = create<UiStoreState>()(
       partialize: (state) => ({
         sidebarCollapsed: state.sidebarCollapsed,
         sessionListPanelOpen: state.sessionListPanelOpen,
+        workspaceDockCollapsed: state.workspaceDockCollapsed,
       }),
     },
   ),

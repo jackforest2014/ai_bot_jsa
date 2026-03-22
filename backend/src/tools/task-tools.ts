@@ -257,6 +257,52 @@ function createUpdateTaskTool(tasks: TaskRepository): Tool {
   };
 }
 
+function createConfirmToolCreationTool(tasks: TaskRepository): Tool {
+  return {
+    name: 'confirm_tool_creation',
+    description:
+      '**服务端校验工具**：在 `add_task` 返回 `task.id` 后调用，从数据库确认该任务已归属当前用户落库。若需**重试** `add_task`，**必须先**用本工具对上一轮 `task_id` 再确认：若 `ok:true` 则**禁止**再次 `add_task`；若 `ok:false` 且原因为未找到再重试。可选 `title_hint` 用于防止误用他人 `task_id`（须与库中标题一致或为子串）。返回 JSON 仅供模型判断；**勿**在面向用户的正文中写出本工具名。',
+    parametersSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: 'add_task 成功响应中的任务 UUID' },
+        title_hint: {
+          type: 'string',
+          description:
+            '可选；若提供则须与库中 title 完全相同或为其子串，否则返回 title_mismatch',
+        },
+      },
+      required: ['task_id'],
+    },
+    async execute(argsJson, ctx) {
+      let args: Record<string, unknown>;
+      try {
+        args = JSON.parse(argsJson || '{}') as Record<string, unknown>;
+      } catch {
+        return jsonResult({ ok: false, reason: 'invalid_json' });
+      }
+      const taskId = readString(args, 'task_id')?.trim();
+      if (!taskId) {
+        return jsonResult({ ok: false, reason: 'task_id_required' });
+      }
+      const row = await tasks.findByIdForUser(taskId, ctx.userId);
+      if (!row) {
+        return jsonResult({ ok: false, reason: 'not_found' });
+      }
+      const hint = readString(args, 'title_hint')?.trim();
+      if (hint) {
+        const t = row.title ?? '';
+        if (t !== hint && !t.includes(hint)) {
+          return jsonResult({ ok: false, reason: 'title_mismatch' });
+        }
+      }
+      const payload = { ok: true as const, task: summarizeTask(row) };
+      const { output } = jsonResult(payload);
+      return { output, toolResultMeta: { tool: 'confirm_tool_creation' } };
+    },
+  };
+}
+
 function createDeleteTaskTool(tasks: TaskRepository): Tool {
   return {
     name: 'delete_task',
@@ -314,5 +360,6 @@ export function registerTaskTools(registry: ToolRegistry, tasks: TaskRepository)
   registry.register(createAddTaskTool(tasks));
   registry.register(createListTasksTool(tasks));
   registry.register(createUpdateTaskTool(tasks));
+  registry.register(createConfirmToolCreationTool(tasks));
   registry.register(createDeleteTaskTool(tasks));
 }

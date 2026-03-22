@@ -42,6 +42,9 @@ import { userRoutes } from './routes/user';
 import { promptRoutes } from './routes/prompts';
 import { adminRoutes } from './routes/admin';
 import { CHAT_SSE_EVENTS } from './chat/sse-contract';
+import { isOrchestrationEnabled } from './orchestration/flags';
+import { isRouteAgentGotEnabled, isTaskAgentGotEnabled } from './orchestration/got-flags';
+import { OrchestrationService } from './orchestration/orchestration-service';
 import { chatStreamBodySchema } from './validation/api-schemas';
 import { zodIssues } from './lib/zod-errors';
 
@@ -355,15 +358,30 @@ app.post('/api/chat/stream', async (c) => {
     sessionId,
     messageChars: message.length,
     memory: !!memoryService,
+    orchestration: isOrchestrationEnabled(c.env),
   });
 
-  const stream = chatService.handleMessageStream({
-    user,
-    userInput: message,
-    sessionId,
-    sessionTitleSource,
-    waitUntil: waitUntilFromContext(c),
-  });
+  const correlationId = crypto.randomUUID();
+  const stream = isOrchestrationEnabled(c.env)
+    ? new OrchestrationService(llm, chatService).handleStream({
+        user,
+        userInput: message,
+        sessionId,
+        sessionTitleSource,
+        waitUntil: waitUntilFromContext(c),
+        correlationId,
+        orchestrationGot: {
+          taskAgent: isTaskAgentGotEnabled(c.env),
+          routeAgent: isRouteAgentGotEnabled(c.env),
+        },
+      })
+    : chatService.handleMessageStream({
+        user,
+        userInput: message,
+        sessionId,
+        sessionTitleSource,
+        waitUntil: waitUntilFromContext(c),
+      });
   // 经 Context 写出，便于与前置 CORS 中间件写在 c.res 上的头合并（见 hono Context#res setter）
   return c.body(stream, 200, {
     'Content-Type': 'text/event-stream; charset=utf-8',

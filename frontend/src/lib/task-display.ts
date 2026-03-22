@@ -14,7 +14,7 @@ function formatUnixSec(sec: number): string {
   })
 }
 
-/** 列表用：优先计划开始 `starts_at`，否则用 `created_at` */
+/** 无 `schedule_zh` 时列表「起始」兜底：starts_at → created_at */
 export function formatTaskListStart(task: Task): { text: string; title: string } {
   if (task.starts_at != null && Number.isFinite(task.starts_at)) {
     return {
@@ -31,6 +31,26 @@ export function formatTaskListStart(task: Task): { text: string; title: string }
   return { text: '—', title: '' }
 }
 
+/**
+ * 列表时间行：优先后端 `schedule_zh`（与 REST / 工具 summarize 一致），否则回退「起始」
+ */
+export function formatTaskListSchedule(task: Task): { label: string; text: string; title: string } {
+  const sch = typeof task.schedule_zh === 'string' ? task.schedule_zh.trim() : ''
+  if (sch) {
+    return {
+      label: '日程',
+      text: sch,
+      title: '与后端 schedule_zh 一致（东八区起 — 止）',
+    }
+  }
+  const start = formatTaskListStart(task)
+  return {
+    label: '起始',
+    text: start.text,
+    title: start.title,
+  }
+}
+
 export function clampText(s: string, maxChars: number): string {
   const t = s.replace(/\s+/g, ' ').trim()
   if (t.length <= maxChars) return t
@@ -40,7 +60,7 @@ export function clampText(s: string, maxChars: number): string {
 const SNIPPET_MAX = 50
 
 /**
- * 列表「核心内容」：`description` → `detail.summary` / `detail.note` → 首条子任务标题
+ * 列表「核心内容」：`description` → `detail.summary`（与后端工具约定一致）→ `detail.note` → 首条子任务标题
  */
 export function taskListCoreSnippet(task: Task, maxChars = SNIPPET_MAX): string | null {
   const desc = typeof task.description === 'string' ? task.description.trim() : ''

@@ -8,6 +8,8 @@ export interface MessageListProps {
   /** 无消息时的占位 */
   emptyHint?: ReactNode
   className?: string
+  /** 流式生成中为 true 时关闭 aria-live，减少读屏/浏览器对频繁 DOM 更新的额外处理，利于滚动稳定 */
+  streaming?: boolean
   /** 重试该条用户消息对应的助手回复：清空当前助手气泡并重新流式生成（任务 3.6 / 气泡旁重试） */
   onRetryAfterUser?: (userMessageId: string) => void
   /** 为 true 时禁用用户气泡旁的「重新生成」（如正在流式或加载历史） */
@@ -21,6 +23,7 @@ export default function MessageList({
   messages,
   emptyHint,
   className,
+  streaming = false,
   onRetryAfterUser,
   regenerateAssistantDisabled = false,
 }: MessageListProps) {
@@ -58,7 +61,12 @@ export default function MessageList({
   }
 
   return (
-    <div className={className} role="log" aria-live="polite" aria-relevant="additions">
+    <div
+      className={className}
+      role="log"
+      aria-live={streaming ? 'off' : 'polite'}
+      aria-relevant="additions"
+    >
       <div className="space-y-3">{nodes}</div>
     </div>
   )

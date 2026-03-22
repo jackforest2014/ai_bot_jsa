@@ -64,7 +64,12 @@ export default function TaskDetailPanel({ task }: TaskDetailPanelProps) {
           </button>
         ) : null}
       </div>
-      {task.starts_at != null || task.ends_at != null ? (
+      {typeof task.schedule_zh === 'string' && task.schedule_zh.trim() ? (
+        <p className="mb-2 text-xs leading-relaxed text-slate-700 dark:text-slate-300">
+          <span className="text-slate-500 dark:text-slate-500">日程（东八区）</span>{' '}
+          {task.schedule_zh.trim()}
+        </p>
+      ) : task.starts_at != null || task.ends_at != null ? (
         <div className="mb-2 space-y-0.5 text-xs text-slate-700 dark:text-slate-300">
           {formatTaskInstant(task.starts_at) ? (
             <p>

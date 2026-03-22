@@ -4,6 +4,18 @@
 
 **依赖前提**：现有 `ChatService`、`ToolRegistry`、任务工具、高德系工具、SSE 管线可正常工作。
 
+### 执行状态（滚动更新）
+
+| 阶段 | 状态 | 说明 |
+|------|------|------|
+| **0 共识与契约** | ✅ 已完成 | [`docs/orchestration/product-rules.md`](../orchestration/product-rules.md)；`sse-contract` 增补 `orchestrator_*`；`ORCHESTRATION_METRICS`；经验文档 [`add-task-retry-confirm.md`](../experiences/add-task-retry-confirm.md) |
+| **1 基础设施** | ✅ 已完成 | `confirm_tool_creation` 工具 + 单测；`TaskRepository.findByIdForUser` 已存在；`src/orchestration/agent-bus.ts`；`ORCHESTRATION_ENABLED` 环境变量占位 |
+| **2 Orchestrator** | ✅ 已完成 | 分解 `decompose.ts`、`OrchestrationService`、`orchestrationSystemAppend` 接入 `ChatService`；`POST /api/chat/stream` 在 `ORCHESTRATION_ENABLED` 下走编排；单测 `orchestration-decompose`、`orchestration-service-stream` |
+| **3 Task Agent** | ✅ 已完成（MVP） | 首步为 `task` 时 `orchestrationTaskAgent`：收窄首轮任务工具、confirm 门禁等（见上文） |
+| **4 Route Plan Agent** | ✅ 已完成（MVP） | `orchestrationRouteAgent.planStepIndex`：首步 `route` 时首轮 **仅 amap_*** + `tool_choice: required` + `orchestrator_progress`（`route_agent`）+ `token.source=route_agent`；**task 先于 route** 时在 `confirm/update/delete` 成功且无未确认 add 后插入 **一轮** 路线专责轮；system 槽位纪律（§4.2 MVP）；埋点 `route_agent_start` / `route_agent_complete`；单测 `orchestration-route-phase` |
+| **5 GOT（可选）** | ✅ 已完成（MVP） | `TASK_AGENT_GOT_ENABLED` / `ROUTE_AGENT_GOT_ENABLED`；`runGraphOfThoughtsLite`（[`graph-of-thoughts-lite.ts`](../../backend/src/lib/graph-of-thoughts-lite.ts)）与 `graph_of_thoughts` 工具共用；编排 Task 首轮前 / Route 专责轮前注入 system 简报；埋点 `orchestrator_got_task` / `orchestrator_got_route` |
+| **6 回归与文档** | ✅ 已完成（MVP） | 手测清单 [`docs/orchestration/e2e-manual-checklist.md`](../orchestration/e2e-manual-checklist.md)；OpenAPI `POST /api/chat/stream` 说明编排 env；本文与 §9.9 / `product-rules` 互链见下 |
+
 ---
 
 ## 阶段 0：共识与契约（预计 4h）
@@ -152,3 +164,4 @@
 
 - [后端技术方案 v1.2 · §9.9](../technical/tech_design_ai_bot_v1_2.md#99-多-agent-编排orchestrator-与专业-agent演进)（含 §9.9.4 重试前 confirm、§9.9.5 路线自动衔接、**§9.9.6.1～6.2 SSE 字段契约与 TS 形状**）
 - [任务工具强制经验](../experiences/task-mutation-tool-forcing.md)
+- [编排产品规则](../orchestration/product-rules.md) · [直播式手测清单](../orchestration/e2e-manual-checklist.md) · 后端实现入口 [`backend/src/orchestration/`](../../backend/src/orchestration/)（含 `flags`、`got-flags`、`OrchestrationService`）

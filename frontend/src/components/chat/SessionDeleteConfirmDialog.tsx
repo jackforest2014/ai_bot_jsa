@@ -36,26 +36,27 @@ export default function SessionDeleteConfirmDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="w-full max-w-sm rounded-xl border border-red-300/80 bg-white p-5 shadow-xl dark:border-red-500/30 dark:bg-slate-900/98 dark:shadow-[0_24px_64px_rgba(0,0,0,0.65),0_0_0_1px_rgba(248,113,113,0.12)]"
+        className="w-full max-w-sm rounded-xl border border-red-300/80 bg-white p-5 text-slate-900 shadow-xl dark:border-red-400/45 dark:bg-slate-950 dark:text-slate-100 dark:shadow-[0_24px_64px_rgba(0,0,0,0.75),0_0_0_1px_rgba(248,113,113,0.25)]"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === 'Escape' && !busy) onCancel()
         }}
       >
-        <h2 id={titleId} className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+        <h2 id={titleId} className="text-sm font-semibold text-slate-900 dark:text-slate-50">
           删除会话
         </h2>
-        <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-400">
-          确定删除「<span className="text-slate-900 dark:text-slate-200">{session.title}</span>
+        <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+          确定删除「
+          <span className="font-medium text-slate-900 dark:text-slate-100">{session.title}</span>
           」？聊天记录将一并删除且
-          <span className="text-red-600 dark:text-red-300/90">不可恢复</span>。
+          <span className="font-semibold text-red-600 dark:text-red-300">不可恢复</span>。
         </p>
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
           <button
             ref={cancelRef}
             type="button"
             disabled={busy}
-            className="rounded-lg border border-slate-300 bg-transparent px-4 py-2 text-xs font-medium text-slate-600 transition hover:border-slate-400 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40 dark:border-slate-500/40 dark:text-slate-400 dark:hover:border-slate-400/60 dark:hover:bg-slate-800/50 dark:hover:text-slate-200"
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40 dark:border-slate-500 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-400 dark:hover:bg-slate-700 dark:hover:text-white"
             onClick={onCancel}
           >
             取消
@@ -63,7 +64,7 @@ export default function SessionDeleteConfirmDialog({
           <button
             type="button"
             disabled={busy}
-            className="rounded-lg border-0 bg-gradient-to-r from-red-600 to-red-500 px-4 py-2 text-xs font-semibold text-white shadow-[0_4px_20px_rgba(220,38,38,0.45)] transition hover:from-red-500 hover:to-red-400 disabled:cursor-not-allowed disabled:from-slate-600 disabled:to-slate-600 disabled:shadow-none"
+            className="rounded-lg border-0 bg-gradient-to-r from-red-600 to-red-500 px-4 py-2 text-xs font-semibold text-white shadow-[0_4px_20px_rgba(220,38,38,0.45)] transition hover:from-red-500 hover:to-red-400 disabled:cursor-not-allowed disabled:from-slate-600 disabled:to-slate-600 disabled:shadow-none dark:shadow-[0_4px_24px_rgba(248,113,113,0.35)]"
             onClick={() => void onConfirm()}
           >
             {busy ? '删除中…' : '删除'}

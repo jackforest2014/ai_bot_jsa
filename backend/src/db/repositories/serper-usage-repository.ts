@@ -22,6 +22,11 @@ export class SerperUsageRepository {
     return rows[0]?.call_count ?? 0;
   }
 
+  /** 删除该用户全部 Serper 日计数行（无 FK，须在删用户前单独清理） */
+  async deleteAllForUser(userId: string): Promise<void> {
+    await this.db.delete(serperUsage).where(eq(serperUsage.user_id, userId));
+  }
+
   /** Serper 成功返回后调用：插入或 call_count + 1 */
   async incrementSuccess(userId: string, day: string): Promise<void> {
     await this.db

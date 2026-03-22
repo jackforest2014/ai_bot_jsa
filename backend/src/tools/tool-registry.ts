@@ -119,93 +119,94 @@ export class ToolRegistry {
     }
   }
 
+  /** 单次工具调用（供编排 Task Agent 顺序执行等场景复用）。 */
+  async executeCall(call: ToolCall, ctx: ToolContext): Promise<ExecutedToolCall> {
+    const t0 = Date.now();
+    const tool = this.tools.get(call.name);
+    if (!tool) {
+      const dur = Date.now() - t0;
+      recordMetric('tool_execute', {
+        tool: call.name,
+        ok: false,
+        reason: 'unknown_tool',
+        duration_ms: dur,
+        user_id: ctx.userId,
+      });
+      const output = JSON.stringify({ error: `unknown_tool: ${call.name}` });
+      await this.persistSafe({
+        user_id: ctx.userId,
+        session_id: ctx.sessionId ?? null,
+        tool_name: call.name,
+        ok: false,
+        error_message: `unknown_tool: ${call.name}`,
+        duration_ms: dur,
+      });
+      return {
+        name: call.name,
+        geminiToolCallId: toolCallKey(call.name, call.id),
+        output,
+      };
+    }
+    try {
+      const r = await tool.execute(call.arguments, ctx);
+      const dur = Date.now() - t0;
+      const outcome = inferToolInvocationOutcome(r.output);
+      recordMetric('tool_execute', {
+        tool: call.name,
+        ok: outcome.ok,
+        duration_ms: dur,
+        user_id: ctx.userId,
+        ...(outcome.ok
+          ? {}
+          : {
+              reason: 'tool_output',
+              error: outcome.error_message ?? 'failed',
+            }),
+      });
+      await this.persistSafe({
+        user_id: ctx.userId,
+        session_id: ctx.sessionId ?? null,
+        tool_name: call.name,
+        ok: outcome.ok,
+        error_message: outcome.error_message,
+        duration_ms: dur,
+      });
+      return {
+        name: call.name,
+        geminiToolCallId: toolCallKey(call.name, call.id),
+        output: r.output,
+        toolResultMeta: r.toolResultMeta,
+      };
+    } catch (e) {
+      const dur = Date.now() - t0;
+      const errMsg = e instanceof Error ? e.message : String(e);
+      recordMetric('tool_execute', {
+        tool: call.name,
+        ok: false,
+        reason: 'exception',
+        duration_ms: dur,
+        user_id: ctx.userId,
+        error: errMsg,
+      });
+      const output = JSON.stringify({ error: errMsg });
+      await this.persistSafe({
+        user_id: ctx.userId,
+        session_id: ctx.sessionId ?? null,
+        tool_name: call.name,
+        ok: false,
+        error_message: clampErrorMessage(errMsg),
+        duration_ms: dur,
+      });
+      return {
+        name: call.name,
+        geminiToolCallId: toolCallKey(call.name, call.id),
+        output,
+      };
+    }
+  }
+
   async executeAll(calls: ToolCall[], ctx: ToolContext): Promise<ExecutedToolCall[]> {
-    return Promise.all(
-      calls.map(async (call) => {
-        const t0 = Date.now();
-        const tool = this.tools.get(call.name);
-        if (!tool) {
-          const dur = Date.now() - t0;
-          recordMetric('tool_execute', {
-            tool: call.name,
-            ok: false,
-            reason: 'unknown_tool',
-            duration_ms: dur,
-            user_id: ctx.userId,
-          });
-          const output = JSON.stringify({ error: `unknown_tool: ${call.name}` });
-          await this.persistSafe({
-            user_id: ctx.userId,
-            session_id: ctx.sessionId ?? null,
-            tool_name: call.name,
-            ok: false,
-            error_message: `unknown_tool: ${call.name}`,
-            duration_ms: dur,
-          });
-          return {
-            name: call.name,
-            geminiToolCallId: toolCallKey(call.name, call.id),
-            output,
-          };
-        }
-        try {
-          const r = await tool.execute(call.arguments, ctx);
-          const dur = Date.now() - t0;
-          const outcome = inferToolInvocationOutcome(r.output);
-          recordMetric('tool_execute', {
-            tool: call.name,
-            ok: outcome.ok,
-            duration_ms: dur,
-            user_id: ctx.userId,
-            ...(outcome.ok
-              ? {}
-              : {
-                  reason: 'tool_output',
-                  error: outcome.error_message ?? 'failed',
-                }),
-          });
-          await this.persistSafe({
-            user_id: ctx.userId,
-            session_id: ctx.sessionId ?? null,
-            tool_name: call.name,
-            ok: outcome.ok,
-            error_message: outcome.error_message,
-            duration_ms: dur,
-          });
-          return {
-            name: call.name,
-            geminiToolCallId: toolCallKey(call.name, call.id),
-            output: r.output,
-            toolResultMeta: r.toolResultMeta,
-          };
-        } catch (e) {
-          const dur = Date.now() - t0;
-          const errMsg = e instanceof Error ? e.message : String(e);
-          recordMetric('tool_execute', {
-            tool: call.name,
-            ok: false,
-            reason: 'exception',
-            duration_ms: dur,
-            user_id: ctx.userId,
-            error: errMsg,
-          });
-          const output = JSON.stringify({ error: errMsg });
-          await this.persistSafe({
-            user_id: ctx.userId,
-            session_id: ctx.sessionId ?? null,
-            tool_name: call.name,
-            ok: false,
-            error_message: clampErrorMessage(errMsg),
-            duration_ms: dur,
-          });
-          return {
-            name: call.name,
-            geminiToolCallId: toolCallKey(call.name, call.id),
-            output,
-          };
-        }
-      }),
-    );
+    return Promise.all(calls.map((c) => this.executeCall(c, ctx)));
   }
 }
 

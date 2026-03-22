@@ -18,7 +18,7 @@ export function FolderChevronToggle({
       type="button"
       disabled={disabled}
       aria-expanded={expanded}
-      title={expanded ? '折叠子文件夹' : '展开子文件夹'}
+      title={expanded ? '折叠文件夹内容' : '展开文件夹内容'}
       className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-slate-800/70 hover:text-emerald-200/90 disabled:opacity-40"
       onClick={(e) => {
         e.stopPropagation()

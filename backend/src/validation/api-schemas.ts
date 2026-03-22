@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+/** 管理员：按用户显示名（users.name）物理删除该用户及关联数据 */
+export const adminPurgeUserByNameBodySchema = z.object({
+  name: z.string().transform((s) => s.trim()).pipe(z.string().min(1, 'name 不能为空')),
+});
+
 export const chatStreamBodySchema = z.object({
   message: z.string().transform((s) => s.trim()).pipe(z.string().min(1, 'message 不能为空')),
   session_id: z.string().transform((s) => s.trim()).pipe(z.string().min(1, 'session_id 不能为空')),

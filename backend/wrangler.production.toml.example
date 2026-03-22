@@ -35,3 +35,6 @@ QDRANT_COLLECTION = "memory"
 EMBEDDING_DIMENSIONS = "768"
 # 生产切勿在此写 JWT_SECRET；使用: wrangler secret put JWT_SECRET --config wrangler.production.toml
 ENABLE_TOT_GOT_TOOLS = "false"
+# ORCHESTRATION_ENABLED = "false"
+# TASK_AGENT_GOT_ENABLED = "false"
+# ROUTE_AGENT_GOT_ENABLED = "false"

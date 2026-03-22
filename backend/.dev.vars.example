@@ -1,5 +1,8 @@
 # 复制为 .dev.vars 后填入本地密钥（勿提交 .dev.vars）
 #
+# 多 Agent 编排（默认关闭；开启后需 OrchestrationService 已接入 chat/stream）
+# ORCHESTRATION_ENABLED=true
+#
 # 匿名登录 JWT（与 wrangler.toml [vars] JWT_SECRET 一致；生产用 wrangler secret put JWT_SECRET）
 # JWT_SECRET=local-dev-jwt-secret-change-me
 #
@@ -30,4 +33,7 @@
 #
 # 阶段四（可选）
 # ENABLE_TOT_GOT_TOOLS=true   # 注册 tree_of_thoughts / graph_of_thoughts（多轮 LLM，成本高）
+# 阶段五（可选）：编排内嵌 GOT（须 ORCHESTRATION_ENABLED；与 ENABLE_TOT_GOT_TOOLS 独立）
+# TASK_AGENT_GOT_ENABLED=true
+# ROUTE_AGENT_GOT_ENABLED=true
 # FILE_EXCEL_MAX_ROWS=500     # xlsx 异步提取文本量上限的粗略刻度

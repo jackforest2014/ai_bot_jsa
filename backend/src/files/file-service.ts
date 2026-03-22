@@ -5,8 +5,8 @@ import { presignR2UploadPartUrl } from '../storage/r2-presign';
 import { FileSizeError, ValidationError } from '../errors/app-errors';
 import { scheduleFileIngest } from './file-process';
 
-/** PRD / 技术方案 §14：单文件 ≤ 64MB */
-export const MAX_FILE_BYTES = 64 * 1024 * 1024;
+/** 产品约束：单文件 ≤ 10MB（与前端 `MAX_FILE_BYTES` 一致） */
+export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 /** 技术方案 §5.4.2：小文件直传 Worker 上限 */
 export const DIRECT_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
 export const MULTIPART_PART_BYTES = 5 * 1024 * 1024;
@@ -108,7 +108,7 @@ export class FileService {
 
   assertSizeWithinLimit(size: number): void {
     if (size > MAX_FILE_BYTES) {
-      throw new FileSizeError('文件不能超过 64 MB', MAX_FILE_BYTES, size);
+      throw new FileSizeError('文件不能超过 10 MB', MAX_FILE_BYTES, size);
     }
     if (size <= 0) {
       throw new ValidationError('无效的 size');

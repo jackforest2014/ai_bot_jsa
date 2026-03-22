@@ -3,9 +3,12 @@ import { Link } from 'react-router-dom'
 
 import ChatInput from '@/components/chat/ChatInput'
 import ChatStatusIndicator from '@/components/chat/ChatStatusIndicator'
+import ChatWorkspaceDock from '@/components/chat/ChatWorkspaceDock'
 import MessageList from '@/components/chat/MessageList'
+import FileWorkspacePanel from '@/components/files/FileWorkspacePanel'
 import TaskSidebar from '@/components/tasks/TaskSidebar'
 import { useChatStream } from '@/hooks/useChatStream'
+import { useStickToBottomScroll } from '@/hooks/useStickToBottomScroll'
 import { isProfileIncomplete } from '@/lib/profile'
 import { useChatSessionStore } from '@/store/chatSessionStore'
 import { useUserStore } from '@/store/userStore'
@@ -30,6 +33,7 @@ export default function ChatPage() {
     historyLoading,
     tasksRefreshTick,
   } = useChatStream()
+  const { scrollRef, contentRef, onScroll, afterUserSentIntent } = useStickToBottomScroll(messages)
   const [draft, setDraft] = useState('')
 
   const showSyncing = Boolean(token && profileLoading && !user)
@@ -99,30 +103,40 @@ export default function ChatPage() {
               <p className="text-sm text-slate-600 dark:text-slate-400">正在加载本会话…</p>
             ) : null}
 
-            <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-cyan-500/30 bg-white/90 p-3 shadow-sm backdrop-blur-sm sm:p-4 dark:border-cyan-500/20 dark:bg-slate-950/55 dark:shadow-[inset_0_1px_0_rgba(34,211,238,0.06),0_12px_40px_rgba(0,0,0,0.35)]">
-              <MessageList
-                messages={messages}
-                className="min-h-0"
-                onRetryAfterUser={retryAfterUserMessage}
-                regenerateAssistantDisabled={streaming || historyLoading}
-                emptyHint={
-                  <p className="text-sm text-slate-500 dark:text-slate-500">
-                    {historyLoading ? '…' : '发送消息开始对话；会话与历史在左侧列表切换。'}
-                  </p>
-                }
-              />
+            <div
+              ref={scrollRef}
+              onScroll={onScroll}
+              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-xl border border-cyan-500/30 bg-white/90 p-3 shadow-sm backdrop-blur-sm sm:p-4 dark:border-cyan-500/20 dark:bg-slate-950/55 dark:shadow-[inset_0_1px_0_rgba(34,211,238,0.06),0_12px_40px_rgba(0,0,0,0.35)]"
+            >
+              <div ref={contentRef} className="min-h-0">
+                <MessageList
+                  messages={messages}
+                  streaming={streaming}
+                  className="min-h-0"
+                  onRetryAfterUser={retryAfterUserMessage}
+                  regenerateAssistantDisabled={streaming || historyLoading}
+                  emptyHint={
+                    <p className="text-sm text-slate-500 dark:text-slate-500">
+                      {historyLoading ? '…' : '发送消息开始对话；会话与历史在左侧列表切换。'}
+                    </p>
+                  }
+                />
+              </div>
             </div>
 
-            {streamStatusHint ? (
-              <p className="text-sm text-slate-600 dark:text-slate-400" aria-live="polite">
-                {streamStatusHint}
-              </p>
-            ) : null}
+            <div className="min-h-[1.375rem] shrink-0">
+              {streamStatusHint ? (
+                <p className="text-sm text-slate-600 dark:text-slate-400" aria-live="polite">
+                  {streamStatusHint}
+                </p>
+              ) : null}
+            </div>
 
             <ChatInput
               value={draft}
               onChange={setDraft}
               onSend={(text) => {
+                afterUserSentIntent()
                 void send(text)
                 setDraft('')
               }}
@@ -146,6 +160,10 @@ export default function ChatPage() {
           />
         </div>
       </div>
+
+      <ChatWorkspaceDock>
+        <FileWorkspacePanel disabled={inputDisabled} />
+      </ChatWorkspaceDock>
     </div>
   )
 }

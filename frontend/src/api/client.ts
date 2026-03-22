@@ -4,7 +4,7 @@ import { useUserStore } from '@/store/userStore'
 const API_BASE = import.meta.env.VITE_API_BASE?.replace(/\/$/, '') ?? ''
 
 const MAX_NETWORK_RETRIES = 2
-const MSG_413 = '单文件不超过 64MB'
+const MSG_413 = '单文件不超过 10MB'
 const DEFAULT_ERR = '请求失败'
 
 export class ApiError extends Error {

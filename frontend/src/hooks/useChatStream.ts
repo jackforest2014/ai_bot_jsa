@@ -16,7 +16,13 @@ const emptyMeta = (): StreamMessageMeta => ({
 })
 
 /** 后端 SSE：任务类工具完成后推 meta，用于刷新右侧任务列表 */
-const TASK_TOOL_SSE = new Set(['add_task', 'list_tasks', 'update_task', 'delete_task'])
+const TASK_TOOL_SSE = new Set([
+  'add_task',
+  'list_tasks',
+  'update_task',
+  'delete_task',
+  'confirm_tool_creation',
+])
 
 function intentionToChatStatus(intention: string): ChatStatus {
   const i = intention.toLowerCase()

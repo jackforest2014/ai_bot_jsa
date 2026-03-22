@@ -60,9 +60,6 @@ export default function Sidebar() {
             ) : null}
           </div>
         ) : null}
-        <NavLink to="/workspace" className={linkClass} onClick={closeSidebarOnMobile}>
-          工作空间
-        </NavLink>
         <NavLink to="/settings" className={linkClass} onClick={closeSidebarOnMobile}>
           设置
         </NavLink>

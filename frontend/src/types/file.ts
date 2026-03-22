@@ -38,6 +38,6 @@ export interface CompleteMultipartBody {
 }
 
 /** 与后端 DIRECT_UPLOAD / MULTIPART_PART 对齐（技术方案 §11） */
-export const MAX_FILE_BYTES = 64 * 1024 * 1024
+export const MAX_FILE_BYTES = 10 * 1024 * 1024
 export const SMALL_UPLOAD_MAX_BYTES = 5 * 1024 * 1024
 export const MULTIPART_PART_BYTES = 5 * 1024 * 1024

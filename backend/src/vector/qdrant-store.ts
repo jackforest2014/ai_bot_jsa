@@ -125,6 +125,21 @@ export class QdrantStore implements VectorStore {
     }
   }
 
+  /** 按 payload 条件删除（如 `user_id`）；无有效 filter 时 no-op */
+  async deleteByFilter(filter: Record<string, unknown>): Promise<void> {
+    const qf = toQdrantFilter(filter);
+    if (!qf) return;
+    const res = await this.fetchFn(this.collectionPath('/points/delete?wait=true'), {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ filter: qf }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Qdrant delete by filter failed: ${res.status} ${text}`);
+    }
+  }
+
   /** GET /collections/{name}，用于健康检查 */
   async getCollectionInfo(): Promise<{ status?: string; points_count?: number }> {
     const res = await this.fetchFn(this.collectionPath(''), {

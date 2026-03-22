@@ -65,9 +65,11 @@ Cloudflare Workers + Hono + TypeScript。已完成 **1.1–1.5**、**2.1–2.5**
 12. **阶段四 · 深度研究与可选推理（任务 4.1–4.2）**  
    - 配置 **`SERPER_API_KEY`** 时注册 **`plan_research`**：内部 `PlannerService` + `SubAgent` 复用 **`search` 工具**，Serper 配额与软上限一致。  
    - **`ENABLE_TOT_GOT_TOOLS=true`**（Worker vars 或 `.dev.vars`）时注册 **`tree_of_thoughts`** / **`graph_of_thoughts`**（多轮 LLM，默认关闭）。  
+   - **多 Agent 编排**：**`ORCHESTRATION_ENABLED=true`** 时 `POST /api/chat/stream` 走 **`OrchestrationService`**（分解、Task/Route 专责轮等，见 `docs/tasks/tasks_backend_multi_agent_orchestration.md`）。可选 **`TASK_AGENT_GOT_ENABLED`** / **`ROUTE_AGENT_GOT_ENABLED`**：编排内嵌轻量 GOT（与 `ENABLE_TOT_GOT_TOOLS` 独立，仍多轮 LLM）。  
    - **高德路线（`AMAP_WEB_KEY`）**：写入 `.dev.vars` 或 `wrangler secret put AMAP_WEB_KEY` 后注册 **`amap_geocode`**、**`amap_route_plan`**、**`amap_navigation_uri`**、**`amap_route_static_map`**；规则意图 **`route_query`** 会选用路线专用提示词（迁移 **`0011_route_query_prompt_amap.sql`**，请照常 `db:apply:local` / `remote`）。详见 `docs/agent/tools/gao_de_map/path_plan.md`。  
    - **提示词 · 联网找图（迁移 `0013_prompt_web_image_search_guidance.sql`）**：仅当用户**明确要求从网上找现成图片**时，用 **`search` + `type: "images"`** 并以 Markdown 图片展示；**不是**凡提到「图片」就检索。  
    - **工具调用审计表（迁移 `0012_tool_invocations.sql`）**：`POST /api/chat/stream` 每次工具执行写入 **`tool_invocations`**（`user_id`、`session_id`、`tool_name`、`ok`、`error_message`、`duration_ms`、`created_at` Unix 秒）。按时间区间统计：`GET /api/admin/tool-invocations/count?from_sec=&to_sec=`，可选 **`tool_name`**；鉴权与 **`/api/prompts`** 相同（`ADMIN_API_SECRET` + `Authorization: Bearer` 或 **`X-Admin-Token`**）。  
+   - **按显示名删除用户（Demo）**：`POST /api/admin/users/purge-by-name`，请求体 JSON **`{ "name": "<显示名>" }`**，对应表 **`users.name`**（唯一），**非** JWT 里的 `users.id`。先删 **`file_uploads`**（含 R2）、**`serper_usage`**、Qdrant 点；**最后删除 `users` 表中该行**（`users.id`），其余 D1 子表多随外键 **ON DELETE CASCADE** 一并清空。**当前实现不要求鉴权**（仅本地/Demo）；**勿将暴露公网的 Worker 保持此行为**。其它 **`/api/admin/*`** 仍须 **`ADMIN_API_SECRET`**。实现：`src/services/purge-user-by-name.ts`；契约：`docs/api/openapi.yaml`（`AdminPurgeUserByName*`）。  
 13. **阶段四 · 上传异步入库（任务 4.3）**  
    - 小文件/分片完成后的 **`waitUntil` 任务**：按 MIME 提取文本（pdf 启发式、docx/xlsx 经 `fflate` 解压解析），分块 **`MemoryService.addToMemory`**；图片/音视频为 **仅元数据**（`processed=1`，不向量化）；解析/向量失败 **`processed=-1`**。可选 **`FILE_EXCEL_MAX_ROWS`** 控制表格类提取体量（见 `file-text-extract.ts`）。
 

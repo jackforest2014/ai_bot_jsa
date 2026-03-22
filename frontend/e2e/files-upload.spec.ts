@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-import { e2eBackendEnabled, loginWithDisplayName } from './helpers'
+import { e2eBackendEnabled, ensureWorkspaceDockExpanded, loginWithDisplayName } from './helpers'
 
 test.describe('7.2 工作空间上传', () => {
   test.skip(!e2eBackendEnabled(), '设置 E2E_BASE_URL 并启动前后端后运行')
@@ -8,9 +8,8 @@ test.describe('7.2 工作空间上传', () => {
   test('小文件上传：元数据弹窗与完成提示', async ({ page }) => {
     test.setTimeout(120_000)
     await loginWithDisplayName(page, `e2e_files_${Date.now()}`)
-    await page.getByRole('link', { name: '工作空间' }).click()
-    await page.waitForURL(/\/workspace/, { timeout: 15_000 })
-    await expect(page.getByRole('heading', { name: '工作空间' })).toBeVisible()
+    await page.waitForURL(/\/$|\/\?/, { timeout: 15_000 })
+    await ensureWorkspaceDockExpanded(page)
 
     const fileInput = page.locator('input[type="file"]')
     await fileInput.setInputFiles({
@@ -38,8 +37,8 @@ const multipartEnabled = e2eBackendEnabled() && Boolean(process.env.E2E_MULTIPAR
   test('大于 5MB 走分片路径', async ({ page }) => {
     test.setTimeout(300_000)
     await loginWithDisplayName(page, `e2e_mp_${Date.now()}`)
-    await page.getByRole('link', { name: '工作空间' }).click()
-    await page.waitForURL(/\/workspace/)
+    await page.waitForURL(/\/$|\/\?/)
+    await ensureWorkspaceDockExpanded(page)
 
     const size = 6 * 1024 * 1024
     const fileInput = page.locator('input[type="file"]')

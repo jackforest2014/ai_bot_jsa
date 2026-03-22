@@ -27,9 +27,10 @@ export default function UploadDropzone({ onFiles, disabled }: UploadDropzoneProp
       const tooLarge = rejections.some((r) =>
         r.errors.some((e) => e.code === 'file-too-large'),
       )
+      const maxMb = MAX_FILE_BYTES / (1024 * 1024)
       toast.error(
         tooLarge
-          ? `以下文件超过 64MB 未加入：${names}`
+          ? `以下文件超过 ${maxMb}MB 未加入：${names}`
           : `部分文件无法添加：${names}`,
       )
     },
@@ -60,7 +61,7 @@ export default function UploadDropzone({ onFiles, disabled }: UploadDropzoneProp
         选择文件
       </button>
       <p className="mt-2 text-xs text-slate-600 dark:text-slate-500">
-        单文件不超过 64MB；≤5MB 直传，更大走分片上传。
+        单文件不超过 {MAX_FILE_BYTES / (1024 * 1024)}MB；≤5MB 直传，更大走分片上传。
       </p>
     </div>
   )

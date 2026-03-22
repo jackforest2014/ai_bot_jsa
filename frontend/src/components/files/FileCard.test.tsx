@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import FileCard from '@/components/files/FileCard'
@@ -27,31 +27,37 @@ describe('FileCard', () => {
     onEditMeta: noop,
   }
 
-  it('shows 已索引 when processed is 1', () => {
+  it('exposes 已索引 in accessible name when processed is 1', () => {
     render(<FileCard file={makeFile(1)} layout="grid" {...handlers} />)
-    expect(screen.getByText('已索引')).toBeInTheDocument()
+    expect(screen.getByRole('article', { name: /doc\.txt.*已索引/ })).toBeInTheDocument()
   })
 
-  it('shows 处理中 when processed is 0', () => {
+  it('exposes 处理中 in accessible name when processed is 0', () => {
     render(<FileCard file={makeFile(0)} layout="grid" {...handlers} />)
-    expect(screen.getByText('处理中')).toBeInTheDocument()
+    expect(screen.getByRole('article', { name: /doc\.txt.*处理中/ })).toBeInTheDocument()
   })
 
-  it('shows 处理失败 and 重新处理 when processed is -1', async () => {
+  it('opens context menu and runs 重新处理 when processed is -1', async () => {
     const user = userEvent.setup()
     const onRetry = vi.fn()
     render(
       <FileCard file={makeFile(-1)} layout="grid" {...handlers} onRetryProcess={onRetry} />,
     )
-    expect(screen.getByText('处理失败')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '重新处理' }))
+    expect(screen.getByRole('article', { name: /处理失败/ })).toBeInTheDocument()
+    const row = screen.getByTitle(/悬浮查看详情/)
+    fireEvent.contextMenu(row)
+    await user.click(await screen.findByRole('menuitem', { name: '重新处理' }))
     expect(onRetry).toHaveBeenCalledWith('f1')
   })
 
-  it('shows 失败原因 when process_error is set', () => {
+  it('shows 失败原因 in hover panel when process_error is set', async () => {
     const f = { ...makeFile(-1), process_error: '无法解析或提取正文：PDF 文本提取过少' }
     render(<FileCard file={f} layout="grid" {...handlers} />)
-    expect(screen.getByText(/失败原因：/)).toBeInTheDocument()
-    expect(screen.getByText(/PDF 文本提取过少/)).toBeInTheDocument()
+    const row = screen.getByTitle(/悬浮查看详情/)
+    fireEvent.mouseEnter(row)
+    await waitFor(() => {
+      expect(screen.getByText(/失败原因：/)).toBeInTheDocument()
+      expect(screen.getByText(/PDF 文本提取过少/)).toBeInTheDocument()
+    })
   })
 })

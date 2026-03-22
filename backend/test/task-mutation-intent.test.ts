@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { RuleBasedIntentClassifier } from '../src/intent/intent-classifier';
-import { resolveTaskMutationSignal } from '../src/chat/task-mutation-intent';
+import {
+  mergeTaskMutationStateAfterExecute,
+  resolveTaskMutationSignal,
+} from '../src/chat/task-mutation-intent';
 
 describe('resolveTaskMutationSignal', () => {
   it('forces when intent is task_operation', () => {
@@ -33,6 +36,36 @@ describe('resolveTaskMutationSignal', () => {
 
   it('does not force on chit-chat', () => {
     expect(resolveTaskMutationSignal('苏州园林真美', 'default').force).toBe(false);
+  });
+});
+
+describe('mergeTaskMutationStateAfterExecute', () => {
+  const empty = { calendarPrimed: false, writeDone: false };
+
+  it('sets calendarPrimed after successful resolve_shanghai_calendar', () => {
+    const next = mergeTaskMutationStateAfterExecute(empty, [{ name: 'resolve_shanghai_calendar' }], [
+      { output: JSON.stringify({ ok: true, resolved: [] }) },
+    ]);
+    expect(next).toEqual({ calendarPrimed: true, writeDone: false });
+  });
+
+  it('sets writeDone after successful add_task', () => {
+    const next = mergeTaskMutationStateAfterExecute(empty, [{ name: 'add_task' }], [
+      { output: JSON.stringify({ ok: true, task: { id: 't1' } }) },
+    ]);
+    expect(next).toEqual({ calendarPrimed: false, writeDone: true });
+  });
+
+  it('accumulates calendar then write across calls', () => {
+    let s = empty;
+    s = mergeTaskMutationStateAfterExecute(s, [{ name: 'resolve_shanghai_calendar' }], [
+      { output: JSON.stringify({ ok: true, resolved: [] }) },
+    ]);
+    expect(s.writeDone).toBe(false);
+    s = mergeTaskMutationStateAfterExecute(s, [{ name: 'add_task' }], [
+      { output: JSON.stringify({ ok: true, task: { id: 't1' } }) },
+    ]);
+    expect(s).toEqual({ calendarPrimed: true, writeDone: true });
   });
 });
 

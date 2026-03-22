@@ -100,7 +100,7 @@ function postFormWithProgress(
         return
       }
       if (xhr.status === 413) {
-        reject(new Error('单文件不超过 64MB'))
+        reject(new Error('单文件不超过 10MB'))
         return
       }
       if (xhr.status < 200 || xhr.status >= 300) {
@@ -194,7 +194,7 @@ export function useFileUpload(options?: UseFileUploadOptions): UseFileUploadResu
         patchItem(clientId, { status: 'uploading', progress: 0, errorMessage: undefined })
 
         if (file.size > MAX_FILE_BYTES) {
-          throw new Error('单文件不超过 64MB')
+          throw new Error('单文件不超过 10MB')
         }
 
         if (file.size <= SMALL_UPLOAD_MAX_BYTES) {

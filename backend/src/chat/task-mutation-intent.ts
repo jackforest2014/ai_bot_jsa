@@ -1,6 +1,6 @@
 /**
  * 识别「应强制走任务工具」的会话：规则关键词 + 与意图分类器协同（见 `resolveTaskMutationSignal`）。
- * 用于首轮收窄工具并 `tool_choice: required`，避免模型空口声称已创建任务却不调 add_task。
+ * 用于收窄任务域工具并 `tool_choice: required`，避免模型空口声称已创建任务却不调 add_task（含日历解析后的后续轮次，见 `mergeTaskMutationStateAfterExecute`）。
  */
 
 /** 首轮暴露给模型的任务域工具（须与 ToolRegistry 注册名一致） */
@@ -75,4 +75,36 @@ export function pickTaskMutationToolDefinitions<T extends { name: string }>(
   return TASK_MUTATION_TOOL_NAMES.map((n) => all.find((t) => t.name === n)).filter(
     (x): x is T => x != null,
   );
+}
+
+export type TaskMutationRoundState = { calendarPrimed: boolean; writeDone: boolean };
+
+function parseToolOutputOk(output: string): boolean {
+  try {
+    const j = JSON.parse(output) as { ok?: unknown };
+    return j.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 非编排路径：首轮 `resolve_shanghai_calendar` 成功后若立刻放开工具列表，模型常直接输出「已创建」而不调 `add_task`。
+ * 在「日历已算准、但尚未写库」期间延续收窄 + `tool_choice:required`，直到 add/update/delete 任一成功。
+ */
+export function mergeTaskMutationStateAfterExecute(
+  prev: TaskMutationRoundState,
+  calls: ReadonlyArray<{ name: string }>,
+  executed: ReadonlyArray<{ output: string } | undefined>,
+): TaskMutationRoundState {
+  let calendarPrimed = prev.calendarPrimed;
+  let writeDone = prev.writeDone;
+  for (let i = 0; i < calls.length; i++) {
+    const name = calls[i]!.name;
+    const out = executed[i]?.output ?? '';
+    if (!parseToolOutputOk(out)) continue;
+    if (name === 'resolve_shanghai_calendar') calendarPrimed = true;
+    if (name === 'add_task' || name === 'update_task' || name === 'delete_task') writeDone = true;
+  }
+  return { calendarPrimed, writeDone };
 }

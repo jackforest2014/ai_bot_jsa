@@ -1,4 +1,5 @@
 import type { LLMProvider } from '../llm/types';
+import { runGraphOfThoughtsLite } from '../lib/graph-of-thoughts-lite';
 import type { Tool } from './tool-registry';
 
 function clampInt(n: unknown, fallback: number, min: number, max: number): number {
@@ -106,43 +107,14 @@ export function createGotTool(llm: LLMProvider): Tool {
         return { output: JSON.stringify({ ok: false, error: 'problem_required' }) };
       }
       const iterations = clampInt(args.iterations, 3, 2, 4);
-
-      let state = '';
-      const r1 = await llm.chat(
-        [{ role: 'user', content: `问题：${problem}\n请给出初步分析与要点（中文）。` }],
-        undefined,
-      );
-      state = r1.content ?? '';
-
-      for (let i = 1; i < iterations; i++) {
-        const step = await llm.chat(
-          [
-            {
-              role: 'user',
-              content: `问题：${problem}\n已有分析：\n${state}\n\n请指出漏洞、对立观点或遗漏，并补充修正后的要点（中文，简洁）。`,
-            },
-          ],
-          undefined,
-        );
-        state = `${state}\n---\n轮次 ${i + 1}：${step.content ?? ''}`;
-      }
-
-      const syn = await llm.chat(
-        [
-          {
-            role: 'user',
-            content: `问题：${problem}\n以下为多轮推敲记录：\n${state}\n\n请输出最终综合结论（中文，条理清晰）。`,
-          },
-        ],
-        undefined,
-      );
+      const { trace, answer } = await runGraphOfThoughtsLite(llm, { problem, iterations });
 
       return {
         output: JSON.stringify({
           ok: true,
           mode: 'graph_of_thoughts',
-          trace: state,
-          answer: syn.content ?? '',
+          trace,
+          answer,
         }),
       };
     },

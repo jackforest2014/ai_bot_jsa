@@ -1,4 +1,4 @@
-import { formatTaskListStart, taskListCoreSnippet } from '@/lib/task-display'
+import { formatTaskListSchedule, taskListCoreSnippet } from '@/lib/task-display'
 import type { Task } from '@/types/task'
 
 export interface TaskItemProps {
@@ -22,7 +22,7 @@ export default function TaskItem({
 }: TaskItemProps) {
   const status = task.status ?? 'pending'
   const done = status === 'done'
-  const start = formatTaskListStart(task)
+  const schedule = formatTaskListSchedule(task)
   const core = taskListCoreSnippet(task, 50)
 
   return (
@@ -46,10 +46,11 @@ export default function TaskItem({
         <div className="min-w-0 flex-1">
           <div className="font-medium text-slate-800 line-clamp-2 dark:text-slate-100">{task.title}</div>
           <div
-            className="mt-1 text-[11px] tabular-nums text-slate-500 dark:text-slate-400"
-            title={start.title || undefined}
+            className="mt-1 line-clamp-2 text-[11px] text-slate-500 dark:text-slate-400"
+            title={schedule.title || schedule.text}
           >
-            起始 {start.text}
+            <span className="text-slate-500 dark:text-slate-500">{schedule.label}</span>{' '}
+            <span className="tabular-nums">{schedule.text}</span>
           </div>
           {core ? (
             <p

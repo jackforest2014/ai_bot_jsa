@@ -10,6 +10,7 @@ import { userAPI } from '@/api/user'
 import { isLocalhostHost } from '@/lib/is-localhost'
 import { userFromApi } from '@/lib/user-from-api'
 import { useThemeStore } from '@/store/themeStore'
+import { useUiStore } from '@/store/uiStore'
 import { useUserStore } from '@/store/userStore'
 
 interface LoginLocationState {
@@ -89,6 +90,9 @@ export default function LoginPage() {
       })
       useUserStore.getState().setToken(res.token)
       useUserStore.getState().setUser(userFromApi(res.user))
+      if (res.is_new_user) {
+        useUiStore.getState().setWorkspaceDockCollapsed(true)
+      }
       toast.success(res.is_new_user ? '欢迎加入' : '欢迎回来')
       navigate(afterLoginPath, { replace: true })
     } catch (err) {

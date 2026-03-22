@@ -23,7 +23,7 @@ export default function AppRouter() {
           <Route path="/" element={<AppShell />}>
             <Route index element={<ChatPage />} />
             <Route path="workspace" element={<FileWorkspace />} />
-            <Route path="files" element={<Navigate to="/workspace" replace />} />
+            <Route path="files" element={<Navigate to="/" replace />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Route>

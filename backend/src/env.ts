@@ -25,6 +25,12 @@ export type Env = FileStorageEnv &
     ADMIN_API_SECRET?: string;
     /** `true` 时注册 `tree_of_thoughts` / `graph_of_thoughts`（PRD 外，多轮 LLM，默认关闭） */
     ENABLE_TOT_GOT_TOOLS?: string;
+    /** `true` 时编排 Task Agent 在首轮 LLM 前跑轻量 GOT 预推敲（阶段 5，多轮 LLM） */
+    TASK_AGENT_GOT_ENABLED?: string;
+    /** `true` 时编排 Route 专责轮前注入 GOT 简报（阶段 5） */
+    ROUTE_AGENT_GOT_ENABLED?: string;
     /** Excel 类提取字符上限的粗略刻度（行数×系数），见 `file-text-extract` */
     FILE_EXCEL_MAX_ROWS?: string;
+    /** `true` / `1` 时启用多 Agent 编排（OrchestrationService）；未设置则关闭 */
+    ORCHESTRATION_ENABLED?: string;
   };

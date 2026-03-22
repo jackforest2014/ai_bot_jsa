@@ -40,7 +40,12 @@ EMBEDDING_DIMENSIONS = "768"
 JWT_SECRET = "local-dev-jwt-secret-change-me"
 # R2_ACCOUNT_ID = "你的 Cloudflare 账户 ID"
 # 阶段四 · 可选：ENABLE_TOT_GOT_TOOLS = "true" 时注册 TOT/GOT 工具（多轮 LLM，成本高）
+# 阶段五 · 可选：编排内嵌 GOT（与上项独立；仍多轮 LLM）
+# TASK_AGENT_GOT_ENABLED = "true"
+# ROUTE_AGENT_GOT_ENABLED = "true"
 # FILE_EXCEL_MAX_ROWS = "500"  # 异步解析 xlsx 时文本上限的粗略刻度（见 file-text-extract）
+# 多 Agent 编排（OrchestrationService）：true / 1 开启；未配置则关闭（见 docs/orchestration/product-rules.md）
+# ORCHESTRATION_ENABLED = "false"
 
 # [env.preview]
 # vars = { ... }

@@ -31,3 +31,12 @@ export async function ensureSessionListVisible(page: Page) {
   if (await toggle.isVisible().catch(() => false)) await toggle.click()
   await expect(history).toBeVisible({ timeout: 10_000 })
 }
+
+/** 对话页底部工作空间面板收起时点击展开 */
+export async function ensureWorkspaceDockExpanded(page: Page) {
+  const expand = page.getByRole('button', { name: '展开工作空间面板' })
+  if (await expand.isVisible().catch(() => false)) await expand.click()
+  await expect(page.getByRole('heading', { name: '工作空间' })).toBeVisible({
+    timeout: 15_000,
+  })
+}

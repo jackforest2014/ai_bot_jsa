@@ -51,4 +51,40 @@ export const CHAT_SSE_EVENTS = [
     description: '流正常结束',
     payload: {},
   },
+  {
+    event: 'orchestrator_plan',
+    description: '多 Agent 编排：子步快照（tech_design §9.9.6.1）',
+    payload: {
+      correlation_id: 'string',
+      schema_version: 1,
+      steps: 'Array<{ id, type, title, status }>',
+    },
+  },
+  {
+    event: 'orchestrator_progress',
+    description: '编排进度文案（高频）',
+    payload: {
+      correlation_id: 'string',
+      schema_version: 1,
+      phase: 'string',
+      step_id: 'string | null（可选）',
+      attempt: 'number（可选）',
+      message: 'string',
+      level: "'info' | 'warn' | 'error'（可选）",
+    },
+  },
 ] as const;
+
+/** 编排模式下 token 可选扩展（§9.9.6.1） */
+export type ChatTokenPayload = {
+  content: string;
+  source?: 'orchestrator' | 'task_agent' | 'route_agent';
+};
+
+/** done 可选扩展（§9.9.6.1） */
+export type ChatDoneOrchestratorPayload = {
+  orchestrator?: {
+    correlation_id: string;
+    outcome: 'success' | 'partial' | 'failed';
+  };
+};

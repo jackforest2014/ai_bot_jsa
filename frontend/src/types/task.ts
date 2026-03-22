@@ -11,6 +11,11 @@ export interface Task {
   /** Unix 秒，东八区墙钟语义 */
   starts_at?: number | null
   ends_at?: number | null
+  /**
+   * REST / list_tasks 只读：有 starts_at 或 ends_at 时为东八区「起 — 止」文案，否则 null
+   * （与后端 `computeTaskScheduleZh` 一致）
+   */
+  schedule_zh?: string | null
   created_at?: number
   updated_at?: number
 }
