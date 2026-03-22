@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import toast from 'react-hot-toast'
 
 import { sessionsAPI } from '@/api/sessions'
-import { ACTIVE_SESSION_STORAGE_KEY } from '@/router/guards'
+import { ACTIVE_SESSION_STORAGE_KEY, getStoredToken } from '@/router/guards'
 import type { ChatSession } from '@/types/chat'
 
 interface ChatSessionState {
@@ -36,7 +36,8 @@ export const useChatSessionStore = create<ChatSessionState>((set, get) => ({
   sessions: [],
   /** 6.6：刷新后尽早恢复选中会话；`bootstrap` 会与列表校验并修正 */
   activeSessionId: readStoredActiveId(),
-  listLoading: false,
+  /** 有令牌时先置为 true，避免子组件在 `bootstrap` 完成前用 localStorage 里的旧 sessionId 抢拉 /messages */
+  listLoading: typeof localStorage !== 'undefined' && Boolean(getStoredToken()),
   bootstrapErrorShown: false,
 
   setSessions: (sessions) => set({ sessions }),
@@ -61,8 +62,11 @@ export const useChatSessionStore = create<ChatSessionState>((set, get) => ({
       let activeSessionId = state.activeSessionId
       if (activeSessionId === id) {
         activeSessionId = sessions[0]?.id ?? null
-        persistActiveId(activeSessionId)
       }
+      if (activeSessionId != null && !sessions.some((s) => s.id === activeSessionId)) {
+        activeSessionId = sessions[0]?.id ?? null
+      }
+      persistActiveId(activeSessionId)
       return { sessions, activeSessionId }
     }),
 

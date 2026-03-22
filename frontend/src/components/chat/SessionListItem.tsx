@@ -26,7 +26,14 @@ export default function SessionListItem({
   onRenameCommit,
   onRenameCancel,
 }: SessionListItemProps) {
-  const onKeyDownRow = (e: KeyboardEvent) => {
+  const onKeyDownRow = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (renaming) return
+    const target = e.target as HTMLElement | null
+    if (
+      target?.closest('input, textarea, select, [contenteditable="true"]')
+    ) {
+      return
+    }
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       onSelect()

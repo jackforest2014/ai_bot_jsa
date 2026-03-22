@@ -54,6 +54,8 @@ export default function SessionRenameInline({
       onChange={(e) => setValue(e.target.value)}
       onBlur={() => void submit()}
       onKeyDown={(e) => {
+        // 避免空格/其它键冒泡到外层 role="button" 行，触发 onSelect 退出编辑
+        e.stopPropagation()
         if (e.key === 'Enter') {
           e.preventDefault()
           void submit()

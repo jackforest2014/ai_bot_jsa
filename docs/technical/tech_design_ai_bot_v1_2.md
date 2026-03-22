@@ -12,6 +12,7 @@
 | 1.6 | 2026-03-22 | AI Assistant | §9.9 产品约束：**子任务 2 无需用户点确认**（任务成功后自动进入路线 Agent）；**重试前 `confirm_tool_creation`** 防重复建任务；分解策略先实现再迭代；**成本暂不纳入优化目标**；**体感延迟**靠 Orchestrator 经 SSE 高频同步阶段与进度 |
 | 1.7 | 2026-03-22 | AI Assistant | §9.9.6.1 / §9.9.6.2：编排模式 **SSE 最小事件集合** 字段级契约 + TypeScript 形状；兼容旧前端忽略未知事件 |
 | 1.8 | 2026-03-22 | AI Assistant | §9.9.10：**主 Agent / 编排无法识别或分解失败** 时的降级（`default` 意图、`fallback_single_chat`、空 `steps`） |
+| 1.9 | 2026-03-22 | AI Assistant | **§9.1.1 事实检索与 Search Agent**：首轮 `search(organic)` 强制、与找图/高德/任务收窄的优先级、ReAct 上限 3 轮；`token.source: search_agent`；`detect-factual-web-search-intent` 与系统时钟规则 3（b）对齐说明 |
 
 ### 与 PRD v1.1 / v1.2 的范围说明
 
@@ -62,6 +63,7 @@
   - [8.4 Tokens 消耗与成本跟踪框架](#84-tokens-消耗与成本跟踪框架)
 - [9. Agent 实现原理与无框架方案设计](#9-agent-实现原理与无框架方案设计)
   - [9.1 ReAct 循环实现](#91-react-循环实现)
+  - [9.1.1 首轮工具收窄与事实检索（Search Agent）](#911-首轮工具收窄与事实检索search-agent)
   - [9.2 工具注册与调用](#92-工具注册与调用)
   - [9.3 规划与子代理（深度研究）](#93-规划与子代理深度研究)
   - [9.4 高级推理模式：TOT / GOT 实现](#94-高级推理模式tot--got-实现)
@@ -216,7 +218,7 @@
 | 模块 | 职责 | 关键类/文件 |
 |------|------|-------------|
 | **用户管理模块** | 用户信息、AI昵称的存储与获取 | `UserRepository`, `api/user.ts` |
-| **对话管理模块** | 接收用户消息，调用 LLM，处理工具调用，返回回复；意图识别与 Prompt 选择；**按会话加载历史**、**首轮资料缺口**、**自动标题** | `ChatService`, `api/chat.ts`, `IntentClassifier` |
+| **对话管理模块** | 接收用户消息，调用 LLM，处理工具调用，返回回复；意图识别与 Prompt 选择；**按会话加载历史**、**首轮资料缺口**、**自动标题**；**首轮工具收窄**（事实检索 / 找图 / 高德路线 / 任务写入等，见 §9.1.1） | `ChatService`, `detect-factual-web-search-intent.ts`, `api/chat.ts`, `IntentClassifier` |
 | **会话模块** | 会话 CRUD、列表、按会话分页消息、标题更新 | `SessionRepository`, `api/sessions.ts` |
 | **认证模块** | 匿名昵称登录、JWT 签发、名称唯一性校验 | `api/auth.ts`, `AuthService`（或与 `UserRepository` 合并） |
 | **任务管理模块** | 任务 CRUD；可选项目分组（**超出 PRD v1.1，可关闭**） | `TaskRepository`, `ProjectRepository`, `api/tasks.ts` |
@@ -1409,7 +1411,9 @@ private async trackTokenUsage(userId: string, model: string, usage: TokenUsage, 
 
 ### 9.1 ReAct 循环实现
 
-`ChatService.handleMessage()` 的核心是一个 while 循环，模拟 ReAct（Reasoning + Acting）模式，支持多轮工具调用。
+现网实现为 **`ChatService.handleMessageStream()`**（SSE）；逻辑上等价于下文 while 循环，但每轮调用 **`llm.chatStream`**，且**每轮暴露给 API 的工具列表 `roundDefs` 可按策略收窄**（见 **§9.1.1**）。默认全局上限为 `MAX_REACT_ITERATIONS`（10）；**事实检索链路**下可降为 **3** 轮（见 §9.1.1）。
+
+下文伪代码仍以同步 `handleMessage` 描述 ReAct 主干，便于阅读。
 
 ```typescript
 async handleMessage(userId: string, userInput: string): Promise<LLMResponse> {
@@ -1467,6 +1471,51 @@ async handleMessage(userId: string, userInput: string): Promise<LLMResponse> {
   return finalResponse;
 }
 ```
+
+#### 9.1.1 首轮工具收窄与事实检索（Search Agent）
+
+**产品意图**：对用户话轮中**依赖外网核对的事实**（天气实况、新闻摘要、现价/汇率、赛事、政策要点、实体客观信息等），倾向 **「先检索、再作答」**，体验上接近常用产品中「常开联网搜索」——在 **Serper 已配置**（`search` 工具已注册）的前提下，用**首轮强制 `search`** 降低模型用训练数据冒充实况的概率。
+
+**架构取舍（重要）**：**不增加第二次独立 LLM 请求**。「Search Agent」与「主 Agent」在协议上分工明确，在实现上为**同一条 ReAct 链**中的**角色切换**：
+
+| 阶段 | 模型视角（系统注入） | API 工具集 | `tool_choice` |
+|------|----------------------|------------|----------------|
+| **Round 0** | **Search Agent**：须先调用 `search`，`type` 一般为 **`organic`** | 通常**仅** `search` | **`required`** |
+| **Round ≥ 1** | **主 Agent**：根据工具 JSON 判断是否已足以回答用户；不足则可再调其它工具或再次 `search` | **全量** `ToolRegistry` 定义 | 默认（由模型决定） |
+
+工具执行结果以标准 **`role: tool`** 消息写回同一 `messages` 数组，**无需用户确认**；后续轮次自动继续，直至产出无工具调用的最终文本或触达本轮请求的上限。
+
+**意向检测**（启发式，可迭代调宽/调严）：
+
+- 源码：`backend/src/chat/detect-factual-web-search-intent.ts`
+- **`wantsFactualWebLookup(userInput)`** = **`wantsWeatherOrRealtimeWebSearch`**（天气/环境 + 时间参照 + 问法）**或** **`wantsGeneralFactualWebLookup`**（显式查/搜、新闻数据、行情、地理/人物任职、活动展会等；排除明显创作、扮演、纯寒暄）。
+- 与 **`wantsWebImageSearch`**（联网找图）、**路线高德独占**、**编排首步 Route/Task** 等**互斥**：由 `ChatService` 内布尔标志组合决定**至多一种**「首轮收窄」生效。首轮 `toolsForPrompt` / `roundDefs` 的优先顺序可记为：**高德路线独占** → **联网找图** → **事实检索** → **任务写入收窄** → 否则全量工具。
+
+**`ChatService` 中与 Serper / 收窄相关的标志（实现时命名以代码为准）**：
+
+- **`factualSearchForceMode`**：`SERPER` 可用且命中 `wantsFactualWebLookup`，且未被「找图强制」「高德路线独占」「编排 Task Agent / 编排路线首步独占」覆盖时，首轮仅 `search` + `tool_choice: required`。
+- **`webImageSearchForceMode`**：找图场景首轮仅 `search`，且 `type` 须为 **`images`**（另有专用系统追加与 Markdown 图链白名单逻辑，与事实检索路径独立）。
+- **`taskMutationForceMode`**：任务写入类首轮收窄为日历/任务工具；与事实检索强制**互斥**（同话轮若已判为事实检索优先，则本轮不强制任务收窄——复杂混合句可后续靠规则迭代）。
+
+**系统提示与纪律**：
+
+- 事实检索首轮追加 **`FACTUAL_SEARCH_FORCE_APPEND`**（`chat-service.ts`）：说明 Search Agent 职责、`organic` 查询构造、工具返回后切换为主 Agent、**自动多轮**、**本链路合计至多 3 轮**模型-工具循环等。
+- **`formatSystemClockBlock()`**（`system-clock-block.ts`）规则 **3（b）**：在工具列表存在 `search` 时，对**依赖外网摘要的事实**要求使用 **`search`（通常 `organic`）**，并禁止「无专用 API / search 只适用于找图」类拒调借口，与首轮收窄策略一致。
+
+**ReAct 轮次上限**：
+
+- 全局默认仍为 **10** 轮（非事实检索链路、编排、任务强制等）。
+- 当 **`factualSearchForceMode`** 为真时，本请求 **`maxReactIterationsForRequest = min(10, 3)`**（常量 `MAX_FACTUAL_SEARCH_REACT_ROUNDS`），避免在同一用户消息上无限工具循环；触顶时返回说明性兜底文案（实现为中文提示「事实检索链路轮次上限」类）。
+
+**可观测与 SSE**：
+
+- 调试日志：`system_prompt_built` / `llm_stream_request` 等可带 **`factualSearchForceMode`**、**`factualSearchForceFirstRound`**、**`maxReactIterationsForRequest`** 等字段（以现网 `dbg` 为准）。
+- 流式 **`token`**：事实检索 **round 0** 若产生可见增量正文，可带 **`source: "search_agent"`**（`sse-contract.ts` 中 `ChatTokenPayload` 已扩展）；编排模式下的 `task_agent` / `route_agent` 与之并列，前端可**可选**弱样式区分。
+
+**后续迭代方向**（文档层记录，非当前验收项）：
+
+- 放宽或收紧 **`wantsGeneralFactualWebLookup`** 规则，平衡「更像常开搜索」与误触发、Serper 成本。
+- 若产品坚持**物理双次 LLM**（独立 Search 子调用），可在本结构外挂一次「仅输出 `search` 的短 completion」，再进入主对话；成本与延迟需单独评估。
 
 ---
 
@@ -2026,7 +2075,7 @@ private async saveConversation(
 | 字段 | 类型 | 必选 | 说明 |
 |------|------|------|------|
 | `content` | `string` | 是 | 正文增量 |
-| `source` | `string` | 否 | 建议编排模式下填写：`orchestrator` \| `task_agent` \| `route_agent`，供前端区分字体/缩进；省略则视为与历史行为兼容的「主助手」流 |
+| `source` | `string` | 否 | 建议编排模式下填写：`orchestrator` \| `task_agent` \| `route_agent`；**非编排**事实检索首轮（§9.1.1）可填 **`search_agent`**。供前端区分字体/缩进；省略则视为与历史行为兼容的「主助手」流 |
 
 ---
 
@@ -2062,7 +2111,7 @@ private async saveConversation(
 **前端消费建议（最小实现）**
 
 1. 用 **`orchestrator_plan`** 渲染步骤条；用 **`orchestrator_progress.message`** 渲染进度/日志行。  
-2. **`token`** 拼接主对话气泡；若带 `source`，可对 `task_agent` / `route_agent` 做弱样式区分。  
+2. **`token`** 拼接主对话气泡；若带 `source`，可对 `task_agent` / `route_agent` /（普通对话路径下的）`search_agent`（§9.1.1）做弱样式区分。  
 3. **`tool_result_meta`** 继续驱动任务列表等；**`done.orchestrator.outcome`** 做结束态图标或 toast。  
 4. 忽略未知 `event` 名与未知 `phase` / `steps[].type`。
 

@@ -25,5 +25,16 @@ export function wantsWebImageSearch(userInput: string): boolean {
       t,
     );
 
-  return asksWebOrSearch || embedIntent || imageFollowUp;
+  /**
+   * 「整理/写一篇…介绍」且带明确张数（如「图片在 2 到 3 张」「配三张照片」）：
+   * 用户要的是可嵌入的现成图，须走 search(images)；否则模型常 **不调工具** 却谎称已检索并编造 `serpapi.com/...` 等假链。
+   */
+  const articleIntro =
+    /(整理|写|来|生成|做).{0,28}(一?篇|图文|介绍|说明|小文|简报)/.test(t);
+  const quantifiedFigure =
+    /([1-9一二两三几]|\d[到至\-–～]\d).{0,8}张.{0,22}(图|图片|照片)/.test(t) ||
+    /(图|图片|照片).{0,24}(?:在)?([1-9一二两三几]|\d[到至\-–～]\d).{0,8}张/.test(t);
+  const structuredArticleWithImages = articleIntro && quantifiedFigure;
+
+  return asksWebOrSearch || embedIntent || imageFollowUp || structuredArticleWithImages;
 }

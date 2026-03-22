@@ -106,6 +106,9 @@ export const useUserStore = create<UserStore>((set, get) => ({
     }
     const sameToken = prev === t
     if (!sameToken) {
+      /** 换令牌 = 换用户风险；清空会话列表与选中 id，避免沿用上一用户的 activeSessionId 去拉 /messages */
+      useChatSessionStore.getState().reset()
+      useChatSessionStore.setState({ listLoading: true })
       const aiNickname = get().aiNickname
       set({
         token: t,

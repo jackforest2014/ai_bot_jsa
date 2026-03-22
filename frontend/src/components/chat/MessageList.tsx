@@ -67,7 +67,11 @@ export default function MessageList({
       aria-live={streaming ? 'off' : 'polite'}
       aria-relevant="additions"
     >
-      <div className="space-y-3">{nodes}</div>
+      <div className="space-y-3 pb-2">
+        {nodes}
+        {/* 底部留白，避免贴底滚动时最后一条气泡紧贴滚动条 */}
+        <div className="h-2 shrink-0" aria-hidden />
+      </div>
     </div>
   )
 }

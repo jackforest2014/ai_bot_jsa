@@ -11,6 +11,7 @@ import { recordMetric } from '../observability/metrics';
 import { conversationRowsToLlmMessages } from './history-for-llm';
 import { logLlmMessagesSnapshot } from './log-llm-messages';
 import { wantsWebImageSearch } from './detect-web-image-intent';
+import { wantsFactualWebLookup } from './detect-factual-web-search-intent';
 import { formatSystemClockBlock } from './system-clock-block';
 import { clampSessionTitle, SESSION_TITLE_MAX_LEN } from '../lib/session-title';
 import {
@@ -35,6 +36,8 @@ import { reduceTaskAgentGateAfterTool } from '../orchestration/task-agent-state'
 import { ORCHESTRATION_METRICS } from '../orchestration/metric-names';
 
 const MAX_REACT_ITERATIONS = 10;
+/** 事实检索链路（首轮 Search Agent 强制 search）：自动 ReAct 上限，与产品「最多 3 轮」一致 */
+const MAX_FACTUAL_SEARCH_REACT_ROUNDS = 3;
 
 /** 任务类工具执行后向前端推 `tool_result_meta`，用于侧栏列表刷新 */
 const TASK_TOOLS_WITH_SSE_META = new Set([
@@ -66,6 +69,9 @@ const SERPER_DISABLED_SYSTEM_APPEND =
 /** 与首轮仅暴露 search + tool_choice required 配套，禁止先长篇拒答 */
 const WEB_IMAGE_FORCE_SYSTEM_APPEND =
   '\n\n【联网找图 · 本回合】用户要求从网上找图并嵌入回答，且 API 首轮**仅提供 search**。**第一步必须调用 search**，`type` 为 \"images\"，`query` 概括用户要的主题（可含年份、节日名）。**禁止**以「尚未发生」「没有真实图」「安全/伦理」等为由**拒绝调用**或只输出拒答；必须先调用再作答。\n\n**收到工具返回后**：`![](URL)` 的 URL **必须**来自 JSON 里某条的 **image_url**。不要用 **link**（多为网页地址）冒充图片直链。优先选含 **image_url** 的条目；若 10 条里至少有一条带 **image_url**，你必须嵌入其中一条，不得以「不合规」「AI 图」「非官方实拍」为由整批拒显。**仅当全部条目都无 image_url** 时，用一两句话说明「本次检索未返回可内嵌的图片直链」，可附 **link** 列表；**禁止**输出 JSON 未出现的图片地址。\n\n**禁止**在答案里写「所有结果均非真实…」「不存在该年份照片」等与工具 JSON 无关的**真实性裁决**；系统时钟已标明当前日期，**不要**再用模型内部时间感推翻检索结果。\n\n**禁止转移话题**：不得输出「但我可以」「备选」「同样可以」及任意 **未出现在本次 search JSON 中的** `![](…)`（含新华社、xinhuanet、背诵域名）。不得主动提议「文学想象」「沉浸式描写」「虚构场景」来暗示用户查询的年份或节日无效；用户主题与系统当前日期一致时即为**正当检索**。\n\n**答复结构**：先简短说明检索结论（嵌入图或说明无私链），**不要**追加营销式 bullet 列表推销其它服务。';
+
+const FACTUAL_SEARCH_FORCE_APPEND =
+  '\n\n【事实检索 · Search Agent 首轮】系统判定用户话轮含**需外网核对的事实**（如天气实况、新闻、现价、赛事、政策摘要、实体客观信息等）。**当前回合** API **仅提供 `search`**，你处于 **Search Agent**：**第一步必须调用 search**，`type` 一般为 **\"organic\"**，`query` 精炼且含关键实体、地名与日期（天气类须含系统时钟东八区**公历年月日**）。**禁止**以「无专用 API」「search 只适用于找图」等为由跳过。\n\n**工具返回后**你即为主 Agent：若结果足以回答用户，直接生成最终答复；若仍缺信息，可在**后续回合**自动调用其它工具或再次 `search`，**无需用户确认**；同一闲聊勿重复无效检索。本请求在事实检索链路下合计**至多 3 轮**模型-工具循环（含本轮），耗尽前须尽量给出可用结论或诚实说明局限。**禁止**用训练数据编造可检索即得的现价、赛果、天气实况等；工具失败时如实说明。\n';
 
 const SHORT_TERM_MESSAGE_CAP = 20;
 /** RAG = Gemini embed（最长见 gemini-provider GEMINI_EMBED_TIMEOUT_MS）+ Qdrant search；须大于 embed 超时留出检索余量 */
@@ -275,6 +281,12 @@ export class ChatService {
             searchDefs.length > 0 &&
             wantsWebImageSearch(userInput) &&
             !routeAmapModeRaw;
+          const factualSearchForceModeRaw =
+            serperSearchRegistered &&
+            searchDefs.length > 0 &&
+            wantsFactualWebLookup(userInput) &&
+            !routeAmapModeRaw &&
+            !wantsWebImageSearch(userInput);
           const orchTaskDefs = pickOrchestrationTaskAgentToolDefinitions(allTools);
           const orchestrationTaskAgentMode = !!oTaskAgent;
           const routePlanIndex = oRouteAgent?.planStepIndex ?? -1;
@@ -294,6 +306,10 @@ export class ChatService {
             orchestrationTaskAgentMode || orchestrationRouteFirstExclusive
               ? false
               : webImageSearchForceModeRaw;
+          const factualSearchForceMode =
+            orchestrationTaskAgentMode || orchestrationRouteFirstExclusive
+              ? false
+              : factualSearchForceModeRaw;
           const taskToolDefs = pickTaskMutationToolDefinitions(allTools);
           const taskForceRound0Defs = orchestrationTaskAgentMode ? orchTaskDefs : taskToolDefs;
           const taskMutSig = resolveTaskMutationSignal(userInput, intention);
@@ -301,15 +317,18 @@ export class ChatService {
             ? orchTaskDefs.length > 0
             : !routeAmapMode &&
               !webImageSearchForceMode &&
+              !factualSearchForceMode &&
               taskToolDefs.length > 0 &&
               taskMutSig.force;
           const toolsForPrompt = routeAmapMode
             ? amapDefs
             : webImageSearchForceMode
               ? searchDefs
-              : taskMutationForceMode
-                ? taskForceRound0Defs
-                : allTools;
+              : factualSearchForceMode
+                ? searchDefs
+                : taskMutationForceMode
+                  ? taskForceRound0Defs
+                  : allTools;
           let systemPrompt = this.promptService.render(template.template_text, {
             userName: user.name,
             userEmail: user.email ?? '',
@@ -337,6 +356,8 @@ export class ChatService {
             });
           } else if (webImageSearchForceMode) {
             systemPrompt += WEB_IMAGE_FORCE_SYSTEM_APPEND;
+          } else if (factualSearchForceMode) {
+            systemPrompt += FACTUAL_SEARCH_FORCE_APPEND;
           }
           if (taskMutationForceMode) {
             systemPrompt += orchestrationTaskAgentMode
@@ -368,6 +389,8 @@ export class ChatService {
             orchestrationGotRoute: !!orchestrationGot?.routeAgent,
             taskKeywordMatch,
             webImageSearchForceMode,
+            factualSearchForceMode,
+            maxReactCapFactual: factualSearchForceMode ? MAX_FACTUAL_SEARCH_REACT_ROUNDS : null,
             taskMutationForceMode,
             taskMutationReason: taskMutSig.reason,
             systemChars: systemPrompt.length,
@@ -482,7 +505,11 @@ export class ChatService {
           let routeGotInjected = false;
           let taskMutationRoundState = { calendarPrimed: false, writeDone: false };
 
-          for (let round = 0; round < MAX_REACT_ITERATIONS; round++) {
+          const maxReactIterationsForRequest = factualSearchForceMode
+            ? Math.min(MAX_REACT_ITERATIONS, MAX_FACTUAL_SEARCH_REACT_ROUNDS)
+            : MAX_REACT_ITERATIONS;
+
+          for (let round = 0; round < maxReactIterationsForRequest; round++) {
             const routeDeferredExclusiveNow =
               hasOrchestrationRoute &&
               routePlanIndex > 0 &&
@@ -522,6 +549,8 @@ export class ChatService {
                   ? amapDefs
                   : round === 0 && webImageSearchForceMode && searchDefs.length
                     ? searchDefs
+                    : round === 0 && factualSearchForceMode && searchDefs.length
+                      ? searchDefs
                     : taskToolNarrowAndRequired
                       ? taskForceRound0Defs
                       : allDefs;
@@ -532,6 +561,8 @@ export class ChatService {
                   ? { toolChoice: 'required' as const }
                   : webImageSearchForceMode && round === 0 && searchDefs.length
                     ? { toolChoice: 'required' as const }
+                    : factualSearchForceMode && round === 0 && searchDefs.length
+                      ? { toolChoice: 'required' as const }
                     : taskToolNarrowAndRequired
                       ? { toolChoice: 'required' as const }
                       : undefined;
@@ -604,6 +635,8 @@ export class ChatService {
               routeAmapFirstRound: !!streamOpts && routeAmapMode && round === 0,
               routeDeferredExclusiveNow,
               webImageSearchForceFirstRound: !!streamOpts && webImageSearchForceMode && round === 0,
+              factualSearchForceFirstRound: !!streamOpts && factualSearchForceMode && round === 0,
+              maxReactIterationsForRequest,
               taskMutationForceThisRound: !!streamOpts && taskToolNarrowAndRequired,
             });
             const shouldSanitizeWebImages =
@@ -643,9 +676,11 @@ export class ChatService {
                       const src =
                         orchestrationTaskAgentMode && oTaskAgent
                           ? 'task_agent'
-                          : routeExclusiveThisRound && oRouteAgent
-                            ? 'route_agent'
-                            : undefined;
+                          : factualSearchForceMode && round === 0
+                            ? 'search_agent'
+                            : routeExclusiveThisRound && oRouteAgent
+                              ? 'route_agent'
+                              : undefined;
                       send(
                         'token',
                         src ? { content: delta, source: src } : { content: delta },
@@ -858,7 +893,9 @@ export class ChatService {
           }
 
           if (stalledOnTools && !finalText) {
-            finalText = '（已达到工具调用次数上限，请简化问题后重试。）';
+            finalText = factualSearchForceMode
+              ? `（已达到本请求事实检索链路的轮次上限（${MAX_FACTUAL_SEARCH_REACT_ROUNDS} 轮），请缩短或拆分问题后重试。）`
+              : '（已达到工具调用次数上限，请简化问题后重试。）';
             send('token', { content: finalText });
           }
 

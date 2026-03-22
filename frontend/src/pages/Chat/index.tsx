@@ -33,7 +33,10 @@ export default function ChatPage() {
     historyLoading,
     tasksRefreshTick,
   } = useChatStream()
-  const { scrollRef, contentRef, onScroll, afterUserSentIntent } = useStickToBottomScroll(messages)
+  const { scrollRef, contentRef, onScroll, afterUserSentIntent } = useStickToBottomScroll(
+    messages,
+    streaming,
+  )
   const [draft, setDraft] = useState('')
 
   const showSyncing = Boolean(token && profileLoading && !user)
@@ -106,7 +109,7 @@ export default function ChatPage() {
             <div
               ref={scrollRef}
               onScroll={onScroll}
-              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-xl border border-cyan-500/30 bg-white/90 p-3 shadow-sm backdrop-blur-sm sm:p-4 dark:border-cyan-500/20 dark:bg-slate-950/55 dark:shadow-[inset_0_1px_0_rgba(34,211,238,0.06),0_12px_40px_rgba(0,0,0,0.35)]"
+              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-xl border border-cyan-500/30 bg-white/90 p-3 shadow-sm backdrop-blur-sm [scrollbar-gutter:stable] sm:p-4 dark:border-cyan-500/20 dark:bg-slate-950/55 dark:shadow-[inset_0_1px_0_rgba(34,211,238,0.06),0_12px_40px_rgba(0,0,0,0.35)]"
             >
               <div ref={contentRef} className="min-h-0">
                 <MessageList

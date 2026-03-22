@@ -32,4 +32,16 @@ describe('wantsWebImageSearch', () => {
   it('does not match 换一张车票', () => {
     expect(wantsWebImageSearch('帮我换一张车票')).toBe(false);
   });
+
+  it('matches 整理图文介绍 + 明确张数（未说网上）', () => {
+    expect(
+      wantsWebImageSearch(
+        '关于山茶，请整理一篇有图片和文字的介绍，图片在2到3张，文字不超过100字。',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not match 写自我介绍 without image count', () => {
+    expect(wantsWebImageSearch('帮我写一篇自我介绍，纯文字就行')).toBe(false);
+  });
 });

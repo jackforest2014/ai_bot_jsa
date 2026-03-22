@@ -3,7 +3,13 @@
  * v1 Orchestrator 可直接函数调用子 Runner，不强制经过 Bus。
  */
 
-export type AgentId = 'orchestrator' | 'task_agent' | 'route_agent' | 'research_agent' | string;
+export type AgentId =
+  | 'orchestrator'
+  | 'task_agent'
+  | 'route_agent'
+  | 'search_agent'
+  | 'research_agent'
+  | string;
 
 /** 只读快照，避免子 Agent 共享可变引用 */
 export type AgentEnvelopePayload = Record<string, unknown>;

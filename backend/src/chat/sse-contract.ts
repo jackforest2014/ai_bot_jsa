@@ -78,7 +78,7 @@ export const CHAT_SSE_EVENTS = [
 /** 编排模式下 token 可选扩展（§9.9.6.1） */
 export type ChatTokenPayload = {
   content: string;
-  source?: 'orchestrator' | 'task_agent' | 'route_agent';
+  source?: 'orchestrator' | 'task_agent' | 'route_agent' | 'search_agent';
 };
 
 /** done 可选扩展（§9.9.6.1） */

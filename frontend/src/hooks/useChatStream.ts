@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 
+import { ApiError } from '@/api/client'
 import { sessionsAPI } from '@/api/sessions'
 import { consumeChatStream } from '@/lib/chat-stream'
 import type { ChatMessage, StreamMessageMeta } from '@/types/chat'
@@ -85,6 +86,7 @@ export interface UseChatStreamResult {
 export function useChatStream(): UseChatStreamResult {
   const setChatStatus = useUiStore((s) => s.setChatStatus)
   const activeSessionId = useChatSessionStore((s) => s.activeSessionId)
+  const sessionsListLoading = useChatSessionStore((s) => s.listLoading)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -106,7 +108,18 @@ export function useChatStream(): UseChatStreamResult {
   useEffect(() => {
     abortRef.current?.abort()
     setStreamStatusHint(null)
+    if (sessionsListLoading) {
+      setHistoryLoading(true)
+      return
+    }
     if (!activeSessionId) {
+      setMessages([])
+      setError(null)
+      setHistoryLoading(false)
+      return
+    }
+    const { sessions } = useChatSessionStore.getState()
+    if (!sessions.some((s) => s.id === activeSessionId)) {
       setMessages([])
       setError(null)
       setHistoryLoading(false)
@@ -123,11 +136,14 @@ export function useChatStream(): UseChatStreamResult {
         if (useChatSessionStore.getState().activeSessionId !== activeSessionId) return
         setMessages(msgs)
       })
-      .catch(() => {
-        if (!cancelled) {
-          toast.error('加载历史消息失败')
-          setMessages([])
+      .catch((e) => {
+        if (cancelled) return
+        setMessages([])
+        if (e instanceof ApiError && e.status === 404) {
+          useChatSessionStore.getState().removeSession(activeSessionId)
+          return
         }
+        toast.error('加载历史消息失败')
       })
       .finally(() => {
         if (!cancelled) setHistoryLoading(false)
@@ -135,7 +151,7 @@ export function useChatStream(): UseChatStreamResult {
     return () => {
       cancelled = true
     }
-  }, [activeSessionId])
+  }, [activeSessionId, sessionsListLoading])
 
   const updateAssistantMeta = useCallback(
     (updater: (m: StreamMessageMeta) => StreamMessageMeta) => {

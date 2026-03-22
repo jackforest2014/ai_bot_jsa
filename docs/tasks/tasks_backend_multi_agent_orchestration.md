@@ -4,6 +4,8 @@
 
 **依赖前提**：现有 `ChatService`、`ToolRegistry`、任务工具、高德系工具、SSE 管线可正常工作。
 
+**与普通对话**：技术方案 **§9.1.1**（事实检索首轮强制 `search` / Search Agent）在 **编排 Task Agent** 或 **编排路线首步高德独占** 时由 `ChatService` 关闭，避免与首轮任务工具或 `amap_*` 收窄冲突；详见 [`tech_design_ai_bot_v1_2.md` §9.1.1](../technical/tech_design_ai_bot_v1_2.md#911-首轮工具收窄与事实检索search-agent)。
+
 ### 执行状态（滚动更新）
 
 | 阶段 | 状态 | 说明 |
