@@ -31,24 +31,38 @@ export function createUpdateUserProfileTool(users: UserRepository): Tool {
 
       const patch: Parameters<UserRepository['update']>[1] = {};
       if (typeof args.name === 'string' && args.name.trim()) {
-        patch.name = args.name.trim();
+        const name = args.name.trim();
+        if (await users.isNameTakenByOther(name, ctx.userId)) {
+          return {
+            output: JSON.stringify({
+              ok: false,
+              error: 'name_taken',
+              message: '该名称已被其他账号使用',
+            }),
+          };
+        }
+        patch.name = name;
       }
       if (typeof args.ai_nickname === 'string' && args.ai_nickname.trim()) {
         patch.ai_nickname = args.ai_nickname.trim();
       }
-      if (typeof args.email === 'string' && args.email.trim()) {
-        const email = args.email.trim().toLowerCase();
-        const other = await users.findByEmail(email);
-        if (other && other.id !== ctx.userId) {
-          return {
-            output: JSON.stringify({
-              ok: false,
-              error: 'email_taken',
-              message: '该邮箱已被其他账号使用',
-            }),
-          };
+      if (Object.prototype.hasOwnProperty.call(args, 'email')) {
+        if (args.email === null || (typeof args.email === 'string' && !args.email.trim())) {
+          patch.email = null;
+        } else if (typeof args.email === 'string') {
+          const email = args.email.trim().toLowerCase();
+          const other = await users.findByEmail(email);
+          if (other && other.id !== ctx.userId) {
+            return {
+              output: JSON.stringify({
+                ok: false,
+                error: 'email_taken',
+                message: '该邮箱已被其他账号使用',
+              }),
+            };
+          }
+          patch.email = email;
         }
-        patch.email = email;
       }
       if (Object.prototype.hasOwnProperty.call(args, 'preferences')) {
         const p = args.preferences;

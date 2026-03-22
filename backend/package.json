@@ -6,29 +6,42 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:production": "bash scripts/deploy-production.sh",
+    "db:apply:production": "wrangler d1 migrations apply task-assistant-db-production --remote --config wrangler.production.toml",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:apply:local": "wrangler d1 migrations apply task-assistant-db --local",
     "db:apply:remote": "wrangler d1 migrations apply task-assistant-db --remote",
     "db:seed:dev-user": "wrangler d1 execute task-assistant-db --local --file=./scripts/seed-local-dev-user.sql",
     "db:seed:dev-user:remote": "wrangler d1 execute task-assistant-db --remote --file=./scripts/seed-local-dev-user.sql",
-    "qdrant:ensure-collection": "node scripts/ensure-qdrant-collection.mjs"
+    "qdrant:ensure-collection": "node scripts/ensure-qdrant-collection.mjs",
+    "loadtest:k6": "k6 run scripts/k6/api-smoke.js",
+    "loadtest:k6:stream": "k6 run scripts/k6/chat-stream-soak.js",
+    "loadtest:ttft": "node scripts/load/chat-stream-ttft.mjs"
   },
   "dependencies": {
     "drizzle-orm": "^0.40.0",
-    "hono": "^4.7.4"
+    "fflate": "^0.8.2",
+    "hono": "^4.7.4",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.30.5",
     "@cloudflare/workers-types": "^4.20250317.0",
     "@eslint/js": "^9.21.0",
+    "@types/node": "^22.19.15",
+    "@vitest/coverage-v8": "^2.1.9",
+    "drizzle-kit": "^0.30.5",
     "eslint": "^9.21.0",
     "eslint-config-prettier": "^10.0.1",
     "prettier": "^3.5.3",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.26.0",
+    "vitest": "^2.1.9",
     "wrangler": "^4.37.0"
   }
 }

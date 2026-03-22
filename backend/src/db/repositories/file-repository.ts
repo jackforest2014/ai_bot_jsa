@@ -64,6 +64,7 @@ export class FileRepository {
         | 'folder_path'
         | 'tags'
         | 'processed'
+        | 'process_error'
         | 'r2_key'
       >
     >,

@@ -30,14 +30,14 @@ export const userRoutes = new Hono<{ Bindings: Env }>();
 userRoutes.get('/', async (c) => {
   const db = getDb(c.env.task_assistant_db);
   const users = new UserRepository(db);
-  const user = await requireUserFromBearer(c.req.header('Authorization'), users);
+  const user = await requireUserFromBearer(c.req.header('Authorization'), users, c.env);
   return c.json(userToJson(user));
 });
 
 userRoutes.put('/', async (c) => {
   const db = getDb(c.env.task_assistant_db);
   const users = new UserRepository(db);
-  const user = await requireUserFromBearer(c.req.header('Authorization'), users);
+  const user = await requireUserFromBearer(c.req.header('Authorization'), users, c.env);
 
   let body: unknown;
   try {
@@ -57,21 +57,27 @@ userRoutes.put('/', async (c) => {
     if (!name) {
       return c.json({ error: 'name 不能为空', code: 'VALIDATION_ERROR' }, 400);
     }
+    if (name !== user.name && (await users.isNameTakenByOther(name, user.id))) {
+      throw new AppError('名称已被使用', { code: 'NAME_CONFLICT', statusCode: 409 });
+    }
     patch.name = name;
   }
 
-  if (typeof o.email === 'string') {
-    const email = o.email.trim();
-    if (!email) {
-      return c.json({ error: 'email 不能为空', code: 'VALIDATION_ERROR' }, 400);
-    }
-    if (email !== user.email) {
-      const taken = await users.findByEmail(email);
-      if (taken && taken.id !== user.id) {
-        throw new AppError('邮箱已被使用', { code: 'CONFLICT', statusCode: 409 });
+  if (Object.prototype.hasOwnProperty.call(o, 'email')) {
+    if (o.email === null) {
+      patch.email = null;
+    } else if (typeof o.email === 'string') {
+      const email = o.email.trim();
+      patch.email = email === '' ? null : email;
+      if (patch.email && patch.email !== user.email) {
+        const taken = await users.findByEmail(patch.email);
+        if (taken && taken.id !== user.id) {
+          throw new AppError('邮箱已被使用', { code: 'CONFLICT', statusCode: 409 });
+        }
       }
+    } else {
+      return c.json({ error: 'email 须为字符串或 null', code: 'VALIDATION_ERROR' }, 400);
     }
-    patch.email = email;
   }
 
   if (Object.prototype.hasOwnProperty.call(o, 'preferences')) {
@@ -100,7 +106,7 @@ userRoutes.put('/', async (c) => {
 userRoutes.put('/ai-name', async (c) => {
   const db = getDb(c.env.task_assistant_db);
   const users = new UserRepository(db);
-  const user = await requireUserFromBearer(c.req.header('Authorization'), users);
+  const user = await requireUserFromBearer(c.req.header('Authorization'), users, c.env);
 
   let body: unknown;
   try {

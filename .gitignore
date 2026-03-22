@@ -85,6 +85,8 @@ dist
 # Wrangler 本地密钥（勿提交）
 .dev.vars
 backend/.dev.vars
+# 生产 Worker 专用配置（含真实 D1 id，勿提交）
+backend/wrangler.production.toml
 
 # Cloudflare Worker local state
 .wrangler/

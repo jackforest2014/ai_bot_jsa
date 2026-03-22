@@ -18,7 +18,7 @@ function redirectToLogin(): void {
   window.location.assign(`/login?from=${encodeURIComponent(path)}`)
 }
 
-function parseSseBlock(block: string): SseEvent | null {
+export function parseSseBlock(block: string): SseEvent | null {
   const lines = block.split('\n')
   let eventName = 'message'
   const dataParts: string[] = []
@@ -40,7 +40,7 @@ function parseSseBlock(block: string): SseEvent | null {
   return { event: eventName, data } as SseEvent
 }
 
-function flushSseBuffer(
+export function flushSseBuffer(
   buffer: string,
   onEvent: ChatStreamEventHandler,
 ): { rest: string; consumed: boolean } {
@@ -62,13 +62,13 @@ function flushSseBuffer(
 
 export interface ConsumeChatStreamOptions {
   message: string
-  conversation_id?: string
+  session_id: string
   signal: AbortSignal
   onEvent: ChatStreamEventHandler
 }
 
 export async function consumeChatStream(options: ConsumeChatStreamOptions): Promise<void> {
-  const { message, conversation_id, signal, onEvent } = options
+  const { message, session_id, signal, onEvent } = options
   const token =
     useUserStore.getState().token?.trim() || localStorage.getItem(TOKEN_STORAGE_KEY)?.trim()
   const headers = new Headers({
@@ -82,7 +82,7 @@ export async function consumeChatStream(options: ConsumeChatStreamOptions): Prom
     headers,
     body: JSON.stringify({
       message,
-      ...(conversation_id ? { conversation_id } : {}),
+      session_id,
     }),
     signal,
   })

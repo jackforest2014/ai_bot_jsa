@@ -2,25 +2,44 @@ import { useCallback, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import remarkGfm from 'remark-gfm'
-import 'highlight.js/styles/github.css'
+import 'highlight.js/styles/night-owl.css'
 
 import RagCitation from '@/components/chat/RagCitation'
 import ToolCallMark from '@/components/chat/ToolCallMark'
 import type { ChatMessage, StreamMessageMeta } from '@/types/chat'
 import { resolveCitation, resolveToolMeta, splitMessageSegments } from '@/lib/chat-message-segments'
 
+/** API 为 Unix 秒；流式本地消息为 `Date.now()` 毫秒 */
+function messageTimeParts(createdAt: number | undefined): { iso: string; label: string } | null {
+  if (createdAt == null || !Number.isFinite(createdAt)) return null
+  const ms = createdAt < 1e12 ? createdAt * 1000 : createdAt
+  const d = new Date(ms)
+  if (Number.isNaN(d.getTime())) return null
+  const label = d.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+  return { iso: d.toISOString(), label }
+}
+
 type MarkdownVariant = 'user' | 'assistant'
 
 function createMarkdownComponents(variant: MarkdownVariant): Components {
+  const ast = variant === 'assistant'
   const linkClass =
     variant === 'user'
       ? 'font-medium text-sky-300 underline decoration-sky-400/80 hover:text-sky-200'
-      : 'font-medium text-sky-700 underline hover:text-sky-900'
+      : 'font-medium text-cyan-300 underline decoration-cyan-400/70 hover:text-cyan-200'
 
   const inlineCodeClass =
     variant === 'user'
       ? 'rounded bg-white/15 px-1 py-0.5 text-[0.9em] text-slate-100'
-      : 'rounded bg-slate-200/90 px-1 py-0.5 text-[0.9em] text-slate-900'
+      : 'rounded bg-slate-800/95 px-1 py-0.5 text-[0.9em] text-cyan-100'
 
   return {
     a: ({ href, children }) => (
@@ -29,47 +48,87 @@ function createMarkdownComponents(variant: MarkdownVariant): Components {
       </a>
     ),
     p: ({ children }) => (
-      <p className="my-2 text-sm leading-relaxed first:mt-0 last:mb-0">{children}</p>
+      <p
+        className={`my-2 text-sm leading-relaxed first:mt-0 last:mb-0 ${ast ? 'text-slate-200' : ''}`}
+      >
+        {children}
+      </p>
     ),
-    ul: ({ children }) => <ul className="my-2 list-disc pl-5 text-sm">{children}</ul>,
-    ol: ({ children }) => <ol className="my-2 list-decimal pl-5 text-sm">{children}</ol>,
+    ul: ({ children }) => (
+      <ul className={`my-2 list-disc pl-5 text-sm ${ast ? 'text-slate-200' : ''}`}>{children}</ul>
+    ),
+    ol: ({ children }) => (
+      <ol className={`my-2 list-decimal pl-5 text-sm ${ast ? 'text-slate-200' : ''}`}>{children}</ol>
+    ),
     li: ({ children }) => <li className="my-0.5">{children}</li>,
     blockquote: ({ children }) => (
       <blockquote
         className={
           variant === 'user'
             ? 'my-2 border-l-2 border-white/30 pl-3 text-sm text-slate-200'
-            : 'my-2 border-l-2 border-slate-300 pl-3 text-sm text-slate-700'
+            : 'my-2 border-l-2 border-cyan-500/35 pl-3 text-sm text-slate-300'
         }
       >
         {children}
       </blockquote>
     ),
     h1: ({ children }) => (
-      <h1 className="mb-2 mt-3 text-base font-semibold first:mt-0">{children}</h1>
+      <h1
+        className={`mb-2 mt-3 text-base font-semibold first:mt-0 ${ast ? 'text-slate-100' : ''}`}
+      >
+        {children}
+      </h1>
     ),
     h2: ({ children }) => (
-      <h2 className="mb-2 mt-3 text-sm font-semibold first:mt-0">{children}</h2>
+      <h2 className={`mb-2 mt-3 text-sm font-semibold first:mt-0 ${ast ? 'text-slate-100' : ''}`}>
+        {children}
+      </h2>
     ),
     h3: ({ children }) => (
-      <h3 className="mb-1 mt-2 text-sm font-semibold first:mt-0">{children}</h3>
+      <h3 className={`mb-1 mt-2 text-sm font-semibold first:mt-0 ${ast ? 'text-slate-100' : ''}`}>
+        {children}
+      </h3>
     ),
     hr: () => (
-      <hr className={variant === 'user' ? 'my-3 border-white/20' : 'my-3 border-slate-200'} />
+      <hr
+        className={variant === 'user' ? 'my-3 border-white/20' : 'my-3 border-slate-600/80'}
+      />
     ),
     table: ({ children }) => (
-      <div className="my-2 overflow-x-auto rounded-md border border-slate-200 bg-white">
+      <div
+        className={
+          ast
+            ? 'my-2 overflow-x-auto rounded-md border border-slate-600/80 bg-slate-950/90'
+            : 'my-2 overflow-x-auto rounded-md border border-slate-200 bg-white'
+        }
+      >
         <table className="w-full border-collapse text-left text-xs">{children}</table>
       </div>
     ),
-    thead: ({ children }) => <thead className="bg-slate-100">{children}</thead>,
+    thead: ({ children }) => (
+      <thead className={ast ? 'bg-slate-800/90' : 'bg-slate-100'}>{children}</thead>
+    ),
     th: ({ children }) => (
-      <th className="border border-slate-200 px-2 py-1.5 font-semibold text-slate-800">
+      <th
+        className={
+          ast
+            ? 'border border-slate-600 px-2 py-1.5 font-semibold text-slate-100'
+            : 'border border-slate-200 px-2 py-1.5 font-semibold text-slate-800'
+        }
+      >
         {children}
       </th>
     ),
     td: ({ children }) => (
-      <td className="border border-slate-200 px-2 py-1.5 text-slate-700">{children}</td>
+      <td
+        className={
+          ast
+            ? 'border border-slate-600 px-2 py-1.5 text-slate-300'
+            : 'border border-slate-200 px-2 py-1.5 text-slate-700'
+        }
+      >
+        {children}
+      </td>
     ),
     code({ className, children, ...props }) {
       const inline = Boolean((props as { inline?: boolean }).inline)
@@ -101,14 +160,19 @@ function PreWithCopy({ children, variant }: { children?: ReactNode; variant: Mar
   const preSurface =
     variant === 'user'
       ? 'border border-white/10 bg-slate-950/80 text-slate-100'
-      : 'border border-slate-200 bg-white text-slate-900'
+      : 'border border-slate-600/70 bg-slate-950 text-slate-100'
+
+  const copyBtn =
+    variant === 'user'
+      ? 'border-slate-500/50 bg-slate-900/95 text-slate-200 hover:bg-slate-800'
+      : 'border-cyan-500/35 bg-slate-900/95 text-cyan-100 hover:bg-slate-800'
 
   return (
     <div className="group relative my-2">
       <button
         type="button"
         onClick={() => void onCopy()}
-        className="absolute right-2 top-2 z-10 rounded border border-slate-300 bg-white/95 px-2 py-1 text-xs font-medium text-slate-700 shadow-sm opacity-0 transition hover:bg-slate-50 group-hover:opacity-100"
+        className={`absolute right-2 top-2 z-10 rounded border px-2 py-1 text-xs font-medium shadow-sm opacity-0 transition group-hover:opacity-100 ${copyBtn}`}
       >
         {copied ? '已复制' : '复制'}
       </button>
@@ -209,8 +273,13 @@ export interface MessageProps {
 export default function Message({ message, onRetry }: MessageProps) {
   const isUser = message.role === 'user'
   const bubble = isUser
-    ? 'ml-8 rounded-lg bg-slate-900 px-3 py-2 text-sm text-white shadow-sm'
-    : 'mr-8 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-900 shadow-sm'
+    ? 'max-w-[min(92%,42rem)] rounded-xl border-2 border-cyan-400/50 bg-gradient-to-br from-cyan-900 to-teal-950 px-3 py-2 text-sm text-white shadow-[0_4px_24px_rgba(34,211,238,0.22)]'
+    : 'max-w-[min(92%,42rem)] rounded-xl border border-violet-500/35 bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-950 px-3 py-2 text-sm text-slate-100 shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
+
+  const timeParts = messageTimeParts(message.createdAt)
+  const timeClass = isUser
+    ? 'text-[10px] tabular-nums text-cyan-200/55'
+    : 'text-[10px] tabular-nums text-slate-500'
 
   const notices = !isUser ? collectBackendNotices(message.streamMeta) : []
   const hasAssistantText = !isUser && message.content.trim().length > 0
@@ -225,7 +294,7 @@ export default function Message({ message, onRetry }: MessageProps) {
           {notices.map((text) => (
             <aside
               key={text}
-              className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs leading-relaxed text-amber-950"
+              className="rounded-md border border-amber-500/35 bg-amber-950/35 px-2.5 py-1.5 text-xs leading-relaxed text-amber-100"
             >
               {text}
             </aside>
@@ -234,16 +303,18 @@ export default function Message({ message, onRetry }: MessageProps) {
       ) : null}
       {message.streamFailed ? (
         <div
-          className="mb-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs text-red-900"
+          className="mb-2 rounded-md border border-red-500/40 bg-red-950/45 px-2.5 py-1.5 text-xs text-red-100"
           role="alert"
         >
           <p className="font-medium">回复未完整生成</p>
-          <p className="mt-0.5 whitespace-pre-wrap">{message.streamErrorMessage ?? '请重试'}</p>
+          <p className="mt-0.5 whitespace-pre-wrap text-red-200/90">
+            {message.streamErrorMessage ?? '请重试'}
+          </p>
           {onRetry ? (
             <button
               type="button"
               onClick={onRetry}
-              className="mt-2 rounded border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-900 hover:bg-red-50"
+              className="mt-2 rounded border border-red-400/40 bg-red-950/60 px-2 py-1 text-xs font-medium text-red-100 hover:bg-red-900/50"
             >
               重试
             </button>
@@ -251,7 +322,7 @@ export default function Message({ message, onRetry }: MessageProps) {
         </div>
       ) : null}
       {showAssistantPlaceholder ? (
-        <span className="text-slate-400" aria-hidden>
+        <span className="text-slate-500" aria-hidden>
           …
         </span>
       ) : null}
@@ -260,8 +331,20 @@ export default function Message({ message, onRetry }: MessageProps) {
   )
 
   return (
-    <article className={bubble} aria-label={isUser ? '用户消息' : '助手消息'}>
-      <div className="space-y-1">{body}</div>
-    </article>
+    <div
+      className={`flex w-full flex-col gap-1 ${isUser ? 'items-end pl-8' : 'items-start pr-8'}`}
+    >
+      <article className={bubble} aria-label={isUser ? '用户消息' : '助手消息'}>
+        <div className="space-y-1">{body}</div>
+      </article>
+      {timeParts ? (
+        <time
+          className={`max-w-[min(92%,42rem)] px-0.5 ${timeClass}`}
+          dateTime={timeParts.iso}
+        >
+          {timeParts.label}
+        </time>
+      ) : null}
+    </div>
   )
 }

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 
 import Message from '@/components/chat/Message'
 import type { ChatMessage } from '@/types/chat'
@@ -21,28 +21,30 @@ export default function MessageList({
   className,
   onRetryAfterUser,
 }: MessageListProps) {
+  const nodes = useMemo(() => {
+    return messages.map((m, i) => {
+      let onRetry: (() => void) | undefined
+      if (m.role === 'assistant' && m.streamFailed && onRetryAfterUser) {
+        let userId: string | undefined
+        for (let j = i - 1; j >= 0; j -= 1) {
+          if (messages[j]?.role === 'user') {
+            userId = messages[j].id
+            break
+          }
+        }
+        if (userId) onRetry = () => onRetryAfterUser(userId)
+      }
+      return <Message key={m.id} message={m} onRetry={onRetry} />
+    })
+  }, [messages, onRetryAfterUser])
+
   if (messages.length === 0) {
     return emptyHint ? <div className={className}>{emptyHint}</div> : null
   }
 
   return (
     <div className={className} role="log" aria-live="polite" aria-relevant="additions">
-      <div className="space-y-3">
-        {messages.map((m, i) => {
-          let onRetry: (() => void) | undefined
-          if (m.role === 'assistant' && m.streamFailed && onRetryAfterUser) {
-            let userId: string | undefined
-            for (let j = i - 1; j >= 0; j -= 1) {
-              if (messages[j]?.role === 'user') {
-                userId = messages[j].id
-                break
-              }
-            }
-            if (userId) onRetry = () => onRetryAfterUser(userId!)
-          }
-          return <Message key={m.id} message={m} onRetry={onRetry} />
-        })}
-      </div>
+      <div className="space-y-3">{nodes}</div>
     </div>
   )
 }

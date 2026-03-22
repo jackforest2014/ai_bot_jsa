@@ -11,7 +11,24 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   eslintConfigPrettier,
   {
-    ignores: ['node_modules/**', '.wrangler/**'],
+    ignores: ['node_modules/**', '.wrangler/**', 'coverage/**'],
+  },
+  {
+    files: ['test/**/*.ts'],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: __dirname,
+      },
+      globals: {
+        describe: 'readonly',
+        it: 'readonly',
+        expect: 'readonly',
+        vi: 'readonly',
+        beforeEach: 'readonly',
+        afterEach: 'readonly',
+      },
+    },
   },
   {
     files: ['src/**/*.ts'],

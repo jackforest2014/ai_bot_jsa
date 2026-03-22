@@ -15,11 +15,11 @@ export default function ChatStatusIndicator() {
   if (!text) return null
   return (
     <div
-      className="flex items-center gap-2 text-sm text-slate-600"
+      className="flex items-center gap-2 text-sm text-cyan-200/85"
       role="status"
       aria-live="polite"
     >
-      <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-slate-400" />
+      <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.7)]" />
       {text}
     </div>
   )

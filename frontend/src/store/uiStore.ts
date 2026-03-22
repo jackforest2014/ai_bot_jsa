@@ -14,11 +14,15 @@ export interface UiNotification {
 interface UiStoreState {
   globalLoading: boolean
   sidebarCollapsed: boolean
+  /** 「对话」下会话列表面板展开（与侧栏整体折叠独立，任务 4.4） */
+  sessionListPanelOpen: boolean
   notifications: UiNotification[]
   chatStatus: ChatStatus
   setGlobalLoading: (v: boolean) => void
   toggleSidebar: () => void
   setSidebarCollapsed: (v: boolean) => void
+  toggleSessionListPanel: () => void
+  setSessionListPanelOpen: (v: boolean) => void
   enqueueNotification: (item: Omit<UiNotification, 'id'> & { id?: string }) => void
   dequeueNotification: (id: string) => void
   clearNotifications: () => void
@@ -37,11 +41,14 @@ export const useUiStore = create<UiStoreState>()(
     (set) => ({
       globalLoading: false,
       sidebarCollapsed: false,
+      sessionListPanelOpen: true,
       notifications: [],
       chatStatus: 'idle',
       setGlobalLoading: (globalLoading) => set({ globalLoading }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+      toggleSessionListPanel: () => set((s) => ({ sessionListPanelOpen: !s.sessionListPanelOpen })),
+      setSessionListPanelOpen: (sessionListPanelOpen) => set({ sessionListPanelOpen }),
       enqueueNotification: (item) =>
         set((s) => ({
           notifications: [...s.notifications, { ...item, id: item.id ?? nextId() }],
@@ -53,7 +60,10 @@ export const useUiStore = create<UiStoreState>()(
     }),
     {
       name: 'ai-bot-ui',
-      partialize: (state) => ({ sidebarCollapsed: state.sidebarCollapsed }),
+      partialize: (state) => ({
+        sidebarCollapsed: state.sidebarCollapsed,
+        sessionListPanelOpen: state.sessionListPanelOpen,
+      }),
     },
   ),
 )

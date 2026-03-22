@@ -1,4 +1,5 @@
 import type { CitationPayload } from '@/types/sse'
+import { semanticTypeLabel } from '@/lib/semantic-types'
 
 export interface RagCitationProps {
   /** 优先：SSE `citation` */
@@ -38,7 +39,7 @@ export default function RagCitation({
     <div className="group/rag relative z-0 inline-flex max-w-full align-baseline hover:z-30 focus-within:z-30">
       <button
         type="button"
-        className="mx-0.5 inline-flex max-w-full cursor-pointer items-center rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 align-baseline text-xs font-medium text-violet-900 outline-none ring-violet-400/60 hover:bg-violet-100 focus-visible:ring-2"
+        className="mx-0.5 inline-flex max-w-full cursor-pointer items-center rounded border border-violet-500/40 bg-violet-950/50 px-1.5 py-0.5 align-baseline text-xs font-medium text-violet-200 outline-none ring-violet-400/40 hover:border-violet-400/50 hover:bg-violet-950/70 focus-visible:ring-2"
         aria-haspopup="dialog"
         aria-label={`引用：${String(label)}`}
       >
@@ -49,41 +50,41 @@ export default function RagCitation({
         role="dialog"
         aria-label="引用详情"
       >
-        <div className="pointer-events-auto max-h-72 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 text-left text-xs text-slate-800 shadow-lg">
+        <div className="pointer-events-auto max-h-72 overflow-y-auto rounded-lg border border-slate-600/80 bg-slate-950/95 p-3 text-left text-xs text-slate-200 shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
           {!hasBody ? (
             <p className="text-slate-500">暂无引用详情（等待 SSE 或标签内文）。</p>
           ) : null}
           {citation?.filename ? (
-            <p className="mb-1.5 font-medium text-slate-900">{citation.filename}</p>
+            <p className="mb-1.5 font-medium text-slate-100">{citation.filename}</p>
           ) : null}
           {fileId ? (
-            <p className="mb-1.5 break-all">
-              <span className="font-medium text-slate-900">文件 ID：</span>
+            <p className="mb-1.5 break-all text-slate-300">
+              <span className="font-medium text-slate-100">文件 ID：</span>
               {String(fileId)}
             </p>
           ) : null}
           {kind ? (
-            <p className="mb-1.5">
-              <span className="font-medium text-slate-900">类型：</span>
+            <p className="mb-1.5 text-slate-300">
+              <span className="font-medium text-slate-100">类型：</span>
               {String(kind)}
             </p>
           ) : null}
           {semantic ? (
-            <p className="mb-1.5">
-              <span className="font-medium text-slate-900">语义类型：</span>
-              {semantic}
+            <p className="mb-1.5 text-slate-300">
+              <span className="font-medium text-slate-100">语义类型：</span>
+              {semanticTypeLabel(String(semantic))}
             </p>
           ) : null}
           {score != null ? (
-            <p className="mb-1.5">
-              <span className="font-medium text-slate-900">相关度：</span>
+            <p className="mb-1.5 text-slate-300">
+              <span className="font-medium text-slate-100">相关度：</span>
               {String(score)}
             </p>
           ) : null}
           {excerpt ? (
             <div>
-              <p className="mb-1 font-medium text-slate-900">摘录</p>
-              <p className="whitespace-pre-wrap text-slate-700">{excerpt}</p>
+              <p className="mb-1 font-medium text-slate-100">摘录</p>
+              <p className="whitespace-pre-wrap text-slate-400">{excerpt}</p>
             </div>
           ) : null}
         </div>

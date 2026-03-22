@@ -20,5 +20,10 @@ export {
   utcDayString,
   type SerperUsageRow,
 } from './serper-usage-repository';
+export {
+  SessionRepository,
+  type ChatSessionRow,
+  type NewChatSessionRow,
+} from './session-repository';
 export { TaskRepository, type NewTaskRow, type TaskRow } from './task-repository';
 export { UserRepository, type NewUserRow, type UserRow } from './user-repository';

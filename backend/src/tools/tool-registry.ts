@@ -1,4 +1,5 @@
 import type { ToolCall, ToolDefinition } from '../llm/types';
+import { recordMetric } from '../observability/metrics';
 
 export type ToolContext = {
   userId: string;
@@ -55,8 +56,16 @@ export class ToolRegistry {
   async executeAll(calls: ToolCall[], ctx: ToolContext): Promise<ExecutedToolCall[]> {
     return Promise.all(
       calls.map(async (call) => {
+        const t0 = Date.now();
         const tool = this.tools.get(call.name);
         if (!tool) {
+          recordMetric('tool_execute', {
+            tool: call.name,
+            ok: false,
+            reason: 'unknown_tool',
+            duration_ms: Date.now() - t0,
+            user_id: ctx.userId,
+          });
           return {
             name: call.name,
             geminiToolCallId: toolCallKey(call.name, call.id),
@@ -65,6 +74,12 @@ export class ToolRegistry {
         }
         try {
           const r = await tool.execute(call.arguments, ctx);
+          recordMetric('tool_execute', {
+            tool: call.name,
+            ok: true,
+            duration_ms: Date.now() - t0,
+            user_id: ctx.userId,
+          });
           return {
             name: call.name,
             geminiToolCallId: toolCallKey(call.name, call.id),
@@ -72,6 +87,14 @@ export class ToolRegistry {
             toolResultMeta: r.toolResultMeta,
           };
         } catch (e) {
+          recordMetric('tool_execute', {
+            tool: call.name,
+            ok: false,
+            reason: 'exception',
+            duration_ms: Date.now() - t0,
+            user_id: ctx.userId,
+            error: e instanceof Error ? e.message : String(e),
+          });
           return {
             name: call.name,
             geminiToolCallId: toolCallKey(call.name, call.id),

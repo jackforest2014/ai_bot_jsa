@@ -2,7 +2,8 @@
 export interface User {
   id: string
   name: string
-  email: string
+  /** PRD v1.2：选填，可为 null */
+  email?: string | null
   ai_nickname?: string
   preferences?: Record<string, unknown>
   created_at?: number

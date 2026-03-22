@@ -172,21 +172,24 @@
 
 #### 并行任务组 C（可并行执行，总工时：13h）
 
-##### 任务 4.1：子代理规划模块 PlannerService（4h）
+##### 任务 4.1：子代理规划模块 PlannerService（4h）✅
 - 实现 `PlannerService.planAndExecute`：生成子任务列表（调用 LLM）。
 - 实现 `SubAgent` 类：执行单个子任务（可调用工具）。
 - 集成到 `ChatService`，当用户请求「深度研究」时触发；**内部搜索调用同样走 Serper 用量计数与软上限**（与技术方案一致）。
+- **落地**：`src/planner/planner-service.ts`；`createPlanResearchTool`（`plan_research`）在 **`SERPER_API_KEY` 已配置时**与 `search` 一并注册；子代理内仅调用同一 `SearchTool`。
 
-##### 任务 4.2：TOT/GOT 高级推理工具（4h，**可选 / PRD 外**）
+##### 任务 4.2：TOT/GOT 高级推理工具（4h，**可选 / PRD 外**）✅
 - 实现 `TotTool`：构建思考树，评估选择最优分支。
 - 实现 `GotTool`：构建思考图，迭代优化。
 - 注册到 `ToolRegistry`，由 LLM 按需调用；**默认建议 feature flag 关闭**，避免 token 与延迟超预期（技术方案 §9.4）。
+- **落地**：`src/tools/tot-got-tools.ts`（`tree_of_thoughts` / `graph_of_thoughts`）；**仅当** `ENABLE_TOT_GOT_TOOLS=true`（等）时注册。
 
-##### 任务 4.3：文件异步处理与 RAG 集成（5h）
+##### 任务 4.3：文件异步处理与 RAG 集成（5h）✅
 - 实现 `FileProcessor` / `file-parser`：**按技术方案 §4.5 分 MIME 策略**——PDF/Word/文本向量化；Excel 文本提取（行数上限可配置）；图片可选 OCR；**音视频不向量化、仅元数据**；失败时 `processed = -1`。
 - 异步将可索引文本分块，调用 LLM 生成向量，存入 Qdrant（payload 含 **file_id、semantic_type、folder_path、tags**）。
 - 在 FileService 上传完成后触发后台任务。
 - 在 `MemoryService` 中支持按 **semantic_type**（及需要时的路径/标签）过滤检索。
+- **落地**：`src/files/file-text-extract.ts`（MIME 分支 + `fflate` 解 docx/xlsx）；`src/files/file-processor.ts`（分块 + `addToMemory`）；`file-process.ts` 用全量 `Env` 调度；**图片未接 OCR** 时 `metadata_only`；**依赖** `fflate`。
 
 #### 并行任务组 D（可并行执行，总工时：16h）
 
@@ -207,7 +210,7 @@
 - 验证工具调用与最终 assistant 正文中的引用标记一致。
 
 ##### 任务 4.7：工作空间 API 与路径/标签（3h）
-- 验证 `GET /api/files?folder=` 与 `folder_path` 前缀匹配行为。
+- 验证 `GET /api/workspace?folder=` 与 `folder_path` 前缀匹配行为。
 - 联调 **标签**（含对话 **`manage_workspace_files` → set_tags**）与列表展示。
 
 ---
@@ -216,7 +219,7 @@
 
 #### 并行任务组 E（可并行执行，总工时：18h）
 
-##### 任务 5.1：单元测试（8h）
+##### 任务 5.1：单元测试（8h）✅
 - 为核心模块编写单元测试（使用 Vitest）：
   - LLMProvider 模拟测试
   - ToolRegistry 注册与执行（**含 SearchTool 配额逻辑、WorkspaceFilesTool 权限**）
@@ -227,15 +230,18 @@
   - SerperUsageRepository / 软上限
   - FileProcessor 分 MIME 分支（至少 PDF 与「跳过向量化」类型）
   - **AuthService / JWT 签发与校验**、**SessionRepository**、**会话归属校验**（与阶段三对齐）
+- **落地**：`npm run test`（Vitest）；用例见 `backend/test/*.test.ts`（含 JWT、`requireUserFromBearer`、SerperQuota、`ToolRegistry`、`createSearchTool` mock、Intent、`PromptService`、`MemoryService` 过滤、`extractFileText`、任务 `detail_json`、`ChatService` 流式 SSE 序列、`createLlmProvider` 空配置等）。**SessionRepository / D1** 仍以可选 `TEST_API_BASE` 真机探测为辅（`test/integration/live-api.test.ts`）。
 
-##### 任务 5.2：集成测试与端到端测试（6h）
+##### 任务 5.2：集成测试与端到端测试（6h）✅
 - 编写集成测试，模拟完整对话流程（含 **search、manage_workspace_files、任务 detail_json**）；**匿名登录 / JWT**、**多会话创建与切换**、**再登录后历史恢复**（阶段三契约）。
 - 使用 Playwright 进行端到端测试（**登录** → **选会话** → 对话 → 任务管理 → 文件上传 → RAG 检索）。
+- **落地**：后端 Vitest 组合用例覆盖工具链与流式；**可选** `TEST_API_BASE` 拉活 Worker；前端 **`playwright.config.ts` + `e2e/*.spec.ts`**，`E2E_BASE_URL` 未设时用例 **skip**，需本地 `playwright install` 后 `npm run test:e2e`。
 
-##### 任务 5.3：性能优化与监控（4h）
+##### 任务 5.3：性能优化与监控（4h）✅
 - 分析冷启动时间，优化全局代码（避免重计算）。
 - 添加埋点（LLM 调用耗时、工具调用成功率、文件上传时间、**search_executed / serper 计数**）。
 - 设置日志和监控（wrangler tail 集成）。
+- **落地**：`src/observability/metrics.ts` 的 **`recordMetric`** → 单行 JSON `msg: analytics_metric`；已挂 **`tool_execute`**、`search_executed`、`llm_chat_stream`、`chat_stream_*`、`file_upload` / `file_multipart_initiate`。冷启动未做大拆包，后续可按 bundle 分析再减。**`wrangler tail`** 过滤 `analytics_metric` 或 `metric` 字段即可观测。
 
 ---
 
@@ -243,11 +249,12 @@
 
 #### 并行任务组 F（可并行执行，总工时：10h）
 
-##### 任务 6.1：生产环境配置与部署（3h）
+##### 任务 6.1：生产环境配置与部署（3h）✅
 - 创建生产环境 D1 和 R2 资源。
 - 设置环境变量（Secrets）。
 - 配置自定义域名（可选）。
 - 执行部署脚本，验证生产环境功能。
+- **落地**：[`docs/deployment/backend-production.md`](../deployment/backend-production.md) 操作清单；**`backend/wrangler.production.toml.example`** → 本地 **`wrangler.production.toml`**（已 **`.gitignore`**）；**`npm run deploy:production`**（`scripts/deploy-production.sh`：typecheck + test + deploy）；**`npm run db:apply:production`**；**`scripts/verify-production-endpoints.sh`** 健康检查。
 
 ##### 任务 6.2：API 文档与用户手册（4h）
 - 编写 API 接口文档（Swagger/OpenAPI 格式），**包含 SSE 事件类型与示例**；**补充 `/api/auth/*`、`/api/sessions/*`**、**`POST /api/chat/stream` 的 `session_id`** 等阶段三契约。

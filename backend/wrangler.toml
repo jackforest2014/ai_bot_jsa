@@ -13,9 +13,9 @@ database_id = "12164d7e-af91-4020-9c62-fd197c83be73"
 migrations_dir = "migrations"
 
 # R2：在 Dashboard 创建 bucket `task-assistant-files` 后取消下面三行注释即可启用绑定（与代码中 binding 名 FILES 一致）
-# [[r2_buckets]]
-# binding = "FILES"
-# bucket_name = "task-assistant-files"
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "ai-assistant-files"
 
 # 非敏感默认可通过 vars；密钥请用 `wrangler secret put KEY` 或本地 .dev.vars
 # 预签名下载 URL（可选）：填 R2_ACCOUNT_ID + 下面 bucket 名 + S3 API 令牌（见 README）
@@ -28,12 +28,25 @@ LLM_MODEL = "qwen-plus"
 EMBEDDING_MODEL = "text-embedding-v3"
 # Serper：密钥用 .dev.vars / secret；软上限为「成功搜索」计数/用户/UTC 日
 SERPER_DAILY_SOFT_LIMIT = "80"
-R2_BUCKET_NAME = "task-assistant-files"
+R2_BUCKET_NAME = "ai-assistant-files"
+R2_ACCOUNT_ID = "df3249aedc0af21427f8f4fb46911819"
+R2_S3_ACCESS_KEY_ID = "3eed4376ee7c3287afe69c2ce5787c60"
+R2_S3_SECRET_ACCESS_KEY = "4b05896a2a98411902274ba15c7ab7732dd6d89a04ba10cde18b1fc3541a8bb0"
 # Qdrant：集群 URL（非密钥）；API Key 用 .dev.vars / wrangler secret put QDRANT_API_KEY
 QDRANT_URL = "https://302a1df3-da67-4b97-95eb-cc58281d41a4.us-east4-0.gcp.cloud.qdrant.io"
 QDRANT_COLLECTION = "memory"
 EMBEDDING_DIMENSIONS = "768"
+# 匿名登录 JWT（POST /api/auth/login）；生产请改为 wrangler secret put JWT_SECRET
+JWT_SECRET = "local-dev-jwt-secret-change-me"
 # R2_ACCOUNT_ID = "你的 Cloudflare 账户 ID"
+# 阶段四 · 可选：ENABLE_TOT_GOT_TOOLS = "true" 时注册 TOT/GOT 工具（多轮 LLM，成本高）
+# FILE_EXCEL_MAX_ROWS = "500"  # 异步解析 xlsx 时文本上限的粗略刻度（见 file-text-extract）
 
 # [env.preview]
 # vars = { ... }
+
+# -----------------------------------------------------------------------------
+# 生产部署（阶段六 · 6.1）：勿在此文件写生产 D1 id（避免与开发库混用）。
+# 请使用 wrangler.production.toml.example → backend/wrangler.production.toml（已 gitignore）
+# 与文档 docs/deployment/backend-production.md；命令：npm run deploy:production
+# -----------------------------------------------------------------------------

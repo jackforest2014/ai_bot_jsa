@@ -232,7 +232,7 @@ export const filesAPI = {
     if (q?.folder) p.set('folder', q.folder);
     if (q?.type) p.set('type', q.type);
     const qs = p.toString();
-    return request<FileInfo[]>(`/api/files${qs ? `?${qs}` : ''}`);
+    return request<FileInfo[]>(`/api/workspace${qs ? `?${qs}` : ''}`);
   },
   /** 小文件（如 ≤5MB）：multipart/form-data，字段 file、semantic_type，可选 folder_path、tags（JSON 字符串） */
   uploadSmall: (form: FormData) =>
@@ -535,7 +535,7 @@ interface UiState {
     │       ├── file.ts
     │       ├── chat.ts
     │       └── sse.ts         # SseEvent、ToolResultMeta、CitationPayload 等
-    ├── e2e/                   # 可选：Playwright 规格（与 §14 E2E 一致）
+    ├── e2e/                   # Playwright 规格（与 §14 E2E 一致；操作说明见 docs/testing/frontend_e2e_and_build.md）
     └── …                      # vitest.config、eslint 等
 ```
 
@@ -550,6 +550,8 @@ interface UiState {
 | **单元测试** | Vitest | SSE 解析、上传状态机、64MB 校验 |
 | **组件测试** | RTL | Message + Citation、FileCard processed 态 |
 | **E2E** | Playwright | 匿名登录（新/回访）、会话切换与历史、右键重命名、对话流、分片上传、tags、设置 preferences |
+
+**E2E 与生产构建验收的可复现步骤**（环境变量、前后端启动顺序、规格文件说明、CI 建议、排错）：见仓库 **[`docs/testing/frontend_e2e_and_build.md`](../testing/frontend_e2e_and_build.md)**。
 
 ---
 

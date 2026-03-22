@@ -150,7 +150,7 @@
 ### 并行任务组 E（可并行执行，总工时：12h）
 
 #### 任务 5.1：文件列表组件（3h）
-- **`frontend/src/components/files/FileList.tsx`**：网格 / 列表切换；**`GET /api/files` 支持 `?folder=`、`?type=`**（技术方案 §5.2）；可选 **`frontend/src/components/files/FolderBreadcrumb.tsx`** 与 folder 前缀一致；筛选 / 视图切换可与 **`frontend/src/components/files/FileToolbar.tsx`** 合并实现。
+- **`frontend/src/components/files/FileList.tsx`**：网格 / 列表切换；**`GET /api/workspace` 支持 `?folder=`、`?type=`**（技术方案 §5.2）；可选 **`frontend/src/components/files/FolderBreadcrumb.tsx`** 与 folder 前缀一致；筛选 / 视图切换可与 **`frontend/src/components/files/FileToolbar.tsx`** 合并实现。
 - **`frontend/src/components/files/FileCard.tsx`**：文件名、大小、时间、语义类型、**`tags`**、**`folder_path`**、**`processed`**（`0` / `1` / `-1` 态与提示，技术方案 §6.2.3）。
 - 操作：重命名、删除、下载、改语义类型、**编辑 tags（`PUT /api/files/:id/tags`）**（调用 **`frontend/src/api/files.ts`**）。
 - 在 **`frontend/src/pages/Files/FileWorkspace.tsx`** 组合 **`frontend/src/components/files/FileList.tsx`**、**`frontend/src/components/files/FileCard.tsx`**、**`frontend/src/components/files/FolderBreadcrumb.tsx`**（可选）、**`frontend/src/components/files/FileToolbar.tsx`**（可与 FileList 合并）、**`frontend/src/components/files/UploadDropzone.tsx`**、**`frontend/src/components/files/UploadProgress.tsx`**、**`frontend/src/components/files/SemanticTypeModal.tsx`** 与 **`frontend/src/hooks/useFiles.ts`** / **`frontend/src/hooks/useFileUpload.ts`**。
@@ -224,11 +224,13 @@
 - Vitest + RTL（配置在 **`frontend/vitest.config.ts`** 等）：**`frontend/src/lib/chat-stream.ts`**（SSE 解析）、**`frontend/src/hooks/useFileUpload.ts`**（上传状态机）、**64MB 校验**；**`frontend/src/components/chat/Message.tsx`** + 引用、**`frontend/src/components/chat/ToolCallMark.tsx`**、**`frontend/src/components/files/FileCard.tsx`**（**`processed` 态**）、**`frontend/src/lib/utils.ts`**（技术方案 §14）。测试文件建议与源同目录 **`*.test.ts(x)`** 或 **`frontend/src/__tests__/`**。
 
 #### 任务 7.2：端到端测试（Playwright）（5h）
-- 规格目录 **`frontend/e2e/`**（或技术方案 §13 约定路径）：**匿名登录（新用户 / 回访）**、**会话切换与历史**、**右键重命名**；流式对话与元数据（若有稳定桩）。
-- 任务列表与 **detail**；**小文件与分片上传**（含 **`r2_key` 完成流**）；**tags / folder**；**preferences**；修改 AI 昵称；离线缓存展示。
+- 规格目录 **`frontend/e2e/`**（或技术方案目录树中 **`e2e/`** 约定）：**匿名登录（新用户 / 回访）**、**会话切换与历史**、**右键重命名**；流式对话与元数据（可选环境变量启用）。
+- 任务列表与 **detail**；**小文件与分片上传**（含 **`r2_key` 完成流**）；**tags / folder**；**preferences**；修改 AI 昵称；离线缓存（IndexedDB）展示。
+- **操作说明（步骤完整、可复现）**：见 **[`docs/testing/frontend_e2e_and_build.md`](../testing/frontend_e2e_and_build.md)**（含前置条件、`E2E_BASE_URL` / `E2E_CHAT_STREAM` / `E2E_MULTIPART`、与 **`backend`** 联调顺序、规格文件对照表、CI 与排错）。
 
 #### 任务 7.3：构建与部署（4h）
 - 在 **`frontend/`** 目录执行 Vite 生产构建（`npm run build`，读取 **`frontend/vite.config.ts`** 等）；部署 Cloudflare Pages / Vercel 时将**项目根目录指向 `frontend/`**；**生产环境变量 `VITE_API_BASE`**；CORS 由后端配置（技术方案 §12）。
+- **构建与发布前验收步骤**：见 **[`docs/testing/frontend_e2e_and_build.md`](../testing/frontend_e2e_and_build.md) §10**；部署参数摘要见 **`frontend/README.md`**。
 
 ---
 

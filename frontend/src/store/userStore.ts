@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import { TOKEN_STORAGE_KEY, USER_STORAGE_KEY } from '@/router/guards'
+import { useChatSessionStore } from '@/store/chatSessionStore'
 import type { User } from '@/types/user'
 
 interface UserStore {
@@ -26,9 +27,16 @@ function parseUserFromStorage(raw: string | null): User | null {
   }
 }
 
+/** 登录 API 返回的是 JWT（`sub` = user.id），与明文 `users.id` 令牌区分 */
+function isLikelyJwt(token: string): boolean {
+  const parts = token.split('.')
+  return parts.length === 3 && parts.every((p) => p.length > 0)
+}
+
 /**
  * 旧版「模拟登录」使用 dev-token / dev-user，后端 D1 中不存在，会导致大量 401。
- * Bearer 与 `users.id` 一致时，缓存的 user.id 也应与 token 一致，否则等 `/api/user` 拉齐前勿发业务 API。
+ * 明文 Bearer = `users.id` 时，缓存的 user.id 须与 token 一致。
+ * JWT 与 user.id 永不相等，不得因此清空 `localStorage.user`，否则刷新后 user 为空、会话/bootstrap 被 profile 门闩卡住。
  */
 function loadInitial(): Pick<
   UserStore,
@@ -42,7 +50,7 @@ function loadInitial(): Pick<
     user = null
     localStorage.removeItem(TOKEN_STORAGE_KEY)
     localStorage.removeItem(USER_STORAGE_KEY)
-  } else if (token && user && user.id !== token) {
+  } else if (token && user && !isLikelyJwt(token) && user.id !== token) {
     user = null
     localStorage.removeItem(USER_STORAGE_KEY)
   }
@@ -52,11 +60,12 @@ function loadInitial(): Pick<
     token,
     aiNickname: user?.ai_nickname?.trim() || '助手',
     profileHydrated: false,
-    profileLoading: false,
+    /** 有令牌但尚无用户摘要时，避免首帧误判为「已结束加载」 */
+    profileLoading: Boolean(token && !user),
   }
 }
 
-/** 写入技术方案 §4.1 的 `localStorage.user` / `localStorage.token` */
+/** 写入 `TOKEN_STORAGE_KEY` / `USER_STORAGE_KEY`（user 含 preferences 摘要），与 6.6 / guards 约定一致 */
 function persistAuth(snapshot: Pick<UserStore, 'user' | 'token' | 'aiNickname'>) {
   const { user, token, aiNickname } = snapshot
   if (token) localStorage.setItem(TOKEN_STORAGE_KEY, token)
@@ -130,6 +139,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     persistAuth({ user, token: get().token, aiNickname: get().aiNickname })
   },
   clearUser: () => {
+    useChatSessionStore.getState().reset()
     set({
       user: null,
       token: null,

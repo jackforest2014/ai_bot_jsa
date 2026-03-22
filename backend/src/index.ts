@@ -1,10 +1,11 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import {
   ConversationRepository,
   FileRepository,
   PromptRepository,
   SerperUsageRepository,
+  SessionRepository,
   TaskRepository,
   UserRepository,
   getDb,
@@ -20,6 +21,8 @@ import { PromptService } from './prompt';
 import { FileService, getMultipartPresignFromEnv } from './files';
 import { SerperQuotaService, parseSerperDailySoftLimit } from './serper';
 import { createSearchTool } from './tools/search-tool';
+import { createPlanResearchTool } from './tools/plan-research-tool';
+import { createGotTool, createTotTool, isTotGotToolsEnabled } from './tools/tot-got-tools';
 import { ToolRegistry } from './tools/tool-registry';
 import { registerTaskTools } from './tools/task-tools';
 import { createUpdateUserProfileTool } from './tools/user-tool';
@@ -27,9 +30,25 @@ import { createWorkspaceFilesTool } from './tools/workspace-files-tool';
 import { createLlmProvider, hasLlmConfigured, resolveLlmProviderKind } from './llm';
 import { createMemoryService, hasMemoryServiceConfig } from './memory';
 import type { Env } from './env';
+import { authRoutes } from './routes/auth';
 import { fileRoutes } from './routes/files';
+import { workspaceRoutes } from './routes/workspace';
+import { sessionRoutes } from './routes/sessions';
 import { taskRoutes } from './routes/tasks';
 import { userRoutes } from './routes/user';
+import { promptRoutes } from './routes/prompts';
+import { CHAT_SSE_EVENTS } from './chat/sse-contract';
+import { chatStreamBodySchema } from './validation/api-schemas';
+import { zodIssues } from './lib/zod-errors';
+
+function waitUntilFromContext(c: Context): ((p: Promise<unknown>) => void) | undefined {
+  try {
+    const x = c.executionCtx;
+    return (p) => x.waitUntil(p);
+  } catch {
+    return undefined;
+  }
+}
 
 export type { Env };
 
@@ -41,13 +60,28 @@ app.use(
   cors({
     origin: (origin) => origin || '*',
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization'],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-Admin-Token'],
   }),
 );
 
+app.use('*', async (c, next) => {
+  const t0 = Date.now();
+  await next();
+  logger.info('http', {
+    method: c.req.method,
+    path: c.req.path,
+    status: c.res.status,
+    ms: Date.now() - t0,
+  });
+});
+
+app.route('/api/auth', authRoutes);
+app.route('/api/sessions', sessionRoutes);
 app.route('/api/tasks', taskRoutes);
 app.route('/api/user', userRoutes);
+app.route('/api/workspace', workspaceRoutes);
 app.route('/api/files', fileRoutes);
+app.route('/api/prompts', promptRoutes);
 
 app.onError(handleError);
 
@@ -103,10 +137,24 @@ app.get('/health/memory', (c) =>
 
 /** R2 绑定与预签名配置（不发起真实对象请求，避免产生费用） */
 app.get('/health/r2', (c) => {
+  const bindingOk = hasR2Binding(c.env);
+  const presignOk = hasR2PresignConfig(c.env);
+  let note: string;
+  if (bindingOk && presignOk) {
+    note = 'R2 绑定与预签名环境变量均已配置；本接口不访问对象，不产生费用。';
+  } else if (!bindingOk && !presignOk) {
+    note =
+      '未绑定 R2：在 wrangler.toml 启用 [[r2_buckets]] 并创建同名 bucket；预签名另需 R2_ACCOUNT_ID、R2_BUCKET_NAME 与 S3 API 令牌（见 README）。';
+  } else if (!bindingOk) {
+    note = '未绑定 R2：在 wrangler.toml 启用 [[r2_buckets]]，bucket_name 与控制台桶名一致。';
+  } else {
+    note =
+      '预签名未齐：需 R2_ACCOUNT_ID、R2_BUCKET_NAME、R2_S3_ACCESS_KEY_ID、R2_S3_SECRET_ACCESS_KEY（见 README）。Worker 内 put/get 不依赖预签名。';
+  }
   return c.json({
-    binding: hasR2Binding(c.env) ? 'configured' : 'unconfigured',
-    presign_credentials: hasR2PresignConfig(c.env) ? 'configured' : 'missing',
-    note: 'binding 需在 wrangler.toml 启用 [[r2_buckets]] 并创建同名 bucket；预签名需 R2 S3 API 令牌 + vars（见 README）',
+    binding: bindingOk ? 'configured' : 'unconfigured',
+    presign_credentials: presignOk ? 'configured' : 'missing',
+    note,
   });
 });
 
@@ -173,6 +221,15 @@ app.get('/health/qdrant', async (c) => {
 });
 
 /** 验证 D1 连接与迁移（需已执行 npm run db:apply:local 或 remote） */
+/** 对话 SSE 事件类型说明（阶段四 4.6，供前后端联调） */
+app.get('/health/sse-chat', (c) =>
+  c.json({
+    endpoint: 'POST /api/chat/stream',
+    content_type: 'text/event-stream; charset=utf-8',
+    events: CHAT_SSE_EVENTS,
+  }),
+);
+
 app.get('/health/db', async (c) => {
   try {
     await c.env.task_assistant_db.prepare('SELECT 1 AS v').first<{ v: number }>();
@@ -211,7 +268,7 @@ app.post('/api/chat/stream', async (c) => {
 
   const db = getDb(c.env.task_assistant_db);
   const users = new UserRepository(db);
-  const user = await requireUserFromBearer(c.req.header('Authorization'), users);
+  const user = await requireUserFromBearer(c.req.header('Authorization'), users, c.env);
 
   let body: unknown;
   try {
@@ -219,14 +276,22 @@ app.post('/api/chat/stream', async (c) => {
   } catch {
     return c.json({ error: '请求体须为 JSON', code: 'VALIDATION_ERROR' }, 400);
   }
-  const msgRaw =
-    body && typeof body === 'object' && body !== null && 'message' in body
-      ? (body as { message: unknown }).message
-      : undefined;
-  const message = typeof msgRaw === 'string' ? msgRaw.trim() : '';
-  if (!message) {
-    return c.json({ error: 'message 不能为空', code: 'VALIDATION_ERROR' }, 400);
+  const parsed = chatStreamBodySchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(
+      { error: '请求参数无效', code: 'VALIDATION_ERROR', issues: zodIssues(parsed.error) },
+      400,
+    );
   }
+  const message = parsed.data.message;
+  const sessionId = parsed.data.session_id;
+
+  const sessionRepo = new SessionRepository(db);
+  const sessionRow = await sessionRepo.findByIdForUser(sessionId, user.id);
+  if (!sessionRow) {
+    return c.json({ error: '会话不存在', code: 'NOT_FOUND' }, 404);
+  }
+  const sessionTitleSource = sessionRow.title_source === 'user' ? 'user' : 'auto';
 
   const promptRepo = new PromptRepository(db);
   const promptService = new PromptService(promptRepo);
@@ -247,7 +312,14 @@ app.post('/api/chat/stream', async (c) => {
   );
   const serperKey = c.env.SERPER_API_KEY?.trim();
   if (serperKey) {
-    toolRegistry.register(createSearchTool({ apiKey: serperKey, quota: serperQuota }));
+    const searchTool = createSearchTool({ apiKey: serperKey, quota: serperQuota });
+    toolRegistry.register(searchTool);
+    toolRegistry.register(createPlanResearchTool({ llm, searchTool }));
+  }
+
+  if (isTotGotToolsEnabled(c.env)) {
+    toolRegistry.register(createTotTool(llm));
+    toolRegistry.register(createGotTool(llm));
   }
 
   const memoryService = createMemoryService(c.env);
@@ -257,17 +329,25 @@ app.post('/api/chat/stream', async (c) => {
     promptService,
     new RuleBasedIntentClassifier(),
     conversationRepo,
+    sessionRepo,
     toolRegistry,
     memoryService,
   );
 
   logger.info('chat stream: accepted', {
     userId: user.id,
+    sessionId,
     messageChars: message.length,
     memory: !!memoryService,
   });
 
-  const stream = chatService.handleMessageStream({ user, userInput: message });
+  const stream = chatService.handleMessageStream({
+    user,
+    userInput: message,
+    sessionId,
+    sessionTitleSource,
+    waitUntil: waitUntilFromContext(c),
+  });
   // 经 Context 写出，便于与前置 CORS 中间件写在 c.res 上的头合并（见 hono Context#res setter）
   return c.body(stream, 200, {
     'Content-Type': 'text/event-stream; charset=utf-8',

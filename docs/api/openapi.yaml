@@ -1,0 +1,847 @@
+openapi: 3.0.3
+info:
+  title: AI Task Assistant Worker API
+  description: |
+    Cloudflare Workers + Hono 后端 HTTP API（PRD v1.2 / 技术方案 v1.4 对齐）。
+
+    **鉴权**：多数 `/api/*` 需 `Authorization: Bearer <token>`。`token` 为 **JWT**（`POST /api/auth/login` 签发，`sub` = `users.id`）或开发用 **明文用户 id**（如 `local-dev-user`，须存在于 D1）。
+
+    **SSE 对话**：`POST /api/chat/stream` 返回 `text/event-stream`；帧格式为 `event: <名称>` + `data: <JSON>` + 空行。事件类型见下方该路径说明及 `GET /health/sse-chat`。
+
+    **管理 Prompt**：`/api/prompts/*` 需配置 Worker 环境变量 `ADMIN_API_SECRET`，并使用 `Authorization: Bearer <ADMIN_API_SECRET>` 或 `X-Admin-Token: <ADMIN_API_SECRET>`。
+  version: 1.2.0
+
+servers:
+  - url: http://127.0.0.1:8787
+    description: 本地 wrangler dev
+  - url: https://{workerSubdomain}.workers.dev
+    description: Cloudflare Workers 默认子域（部署后替换）
+    variables:
+      workerSubdomain:
+        default: your-worker
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Sessions
+  - name: Chat
+  - name: User
+  - name: Tasks
+  - name: Files
+  - name: PromptsAdmin
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT（login）或明文 users.id（仅开发）
+  schemas:
+    ErrorBody:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        issues:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              message:
+                type: string
+
+    AuthUser:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string, nullable: true }
+        ai_nickname: { type: string }
+
+    LoginRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: 显示名；已存在则登录，否则注册
+        email:
+          type: string
+          nullable: true
+          description: 可选；新用户可填，须全局唯一
+
+    LoginResponse:
+      type: object
+      properties:
+        token: { type: string }
+        user: { $ref: '#/components/schemas/AuthUser' }
+        is_new_user: { type: boolean }
+
+    ProfileExistsResponse:
+      type: object
+      properties:
+        exists: { type: boolean }
+
+    Session:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        title_source:
+          type: string
+          enum: [auto, user]
+        created_at: { type: integer, format: int64 }
+        updated_at: { type: integer, format: int64 }
+
+    ChatStreamRequest:
+      type: object
+      required: [message, session_id]
+      properties:
+        message:
+          type: string
+          description: 用户输入（trim 后非空）
+        session_id:
+          type: string
+          description: 当前会话 UUID，须属于当前用户（否则 404）
+
+    UserProfile:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string, nullable: true }
+        ai_nickname: { type: string }
+        preferences:
+          type: object
+          additionalProperties: true
+        created_at: { type: integer, format: int64 }
+
+    UserPutRequest:
+      type: object
+      properties:
+        name: { type: string }
+        email: { type: string, nullable: true }
+        preferences:
+          type: object
+          nullable: true
+          additionalProperties: true
+
+    MessageRow:
+      type: object
+      properties:
+        id: { type: string }
+        user_id: { type: string }
+        session_id: { type: string }
+        role: { type: string }
+        content: { type: string }
+        intention: { type: string, nullable: true }
+        prompt_id: { type: string, nullable: true }
+        keywords: { type: string, nullable: true }
+        conversation_id: { type: string, nullable: true }
+        created_at: { type: integer, format: int64 }
+
+    MessagesPage:
+      type: object
+      properties:
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/MessageRow' }
+        next_cursor:
+          type: string
+          nullable: true
+
+    PromptTemplate:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        template_text: { type: string }
+        scenario: { type: string }
+        created_at: { type: integer, format: int64 }
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: 基础存活检查
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /health/llm:
+    get:
+      tags: [Health]
+      summary: LLM 是否已配置（不发起外呼）
+      responses:
+        '200':
+          description: OK
+
+  /health/db:
+    get:
+      tags: [Health]
+      summary: D1 连通与 prompt 模板数量
+      responses:
+        '200':
+          description: OK
+        '500':
+          description: D1 错误
+
+  /health/qdrant:
+    get:
+      tags: [Health]
+      summary: Qdrant 可达性
+      responses:
+        '200':
+          description: OK
+        '502':
+          description: 不可达
+        '503':
+          description: 未配置
+
+  /health/memory:
+    get:
+      tags: [Health]
+      summary: 记忆模块（Qdrant + 嵌入）是否可构造
+      responses:
+        '200':
+          description: OK
+
+  /health/serper:
+    get:
+      tags: [Health]
+      summary: Serper 是否配置
+      responses:
+        '200':
+          description: OK
+
+  /health/sse-chat:
+    get:
+      tags: [Health]
+      summary: 对话 SSE 事件类型说明（JSON，非 SSE 流）
+      responses:
+        '200':
+          description: 事件名与 payload 说明
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                endpoint: POST /api/chat/stream
+                content_type: text/event-stream; charset=utf-8
+                events:
+                  - event: status
+                    description: 连接与阶段状态
+                  - event: intention
+                    description: 意图
+                  - event: citation
+                    description: RAG 命中
+                  - event: token
+                    description: 正文增量
+                  - event: tool_call
+                  - event: tool_result_meta
+                  - event: done
+
+  /api/auth/profile-exists:
+    get:
+      tags: [Auth]
+      summary: 查询昵称是否已被占用（不签发 token）
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileExistsResponse' }
+        '400':
+          description: 缺少 name
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: 注册或登录（JWT）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '409':
+          description: 邮箱冲突（新用户）
+        '503':
+          description: 未配置 JWT_SECRET
+
+  /api/sessions:
+    get:
+      tags: [Sessions]
+      security: [{ bearerAuth: [] }]
+      summary: 当前用户会话列表（updated_at 降序）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Session' }
+        '401':
+          description: 未授权
+    post:
+      tags: [Sessions]
+      security: [{ bearerAuth: [] }]
+      summary: 创建会话（可选 JSON 体 `{ "title" }`，默认「新对话」）
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+
+  /api/sessions/{sessionId}/messages:
+    get:
+      tags: [Sessions]
+      security: [{ bearerAuth: [] }]
+      summary: 会话消息分页（created_at 升序）
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: cursor
+          in: query
+          schema: { type: string, nullable: true }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, minimum: 1, maximum: 100 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessagesPage' }
+        '404':
+          description: 会话不存在或不属于当前用户
+
+  /api/sessions/{sessionId}:
+    patch:
+      tags: [Sessions]
+      security: [{ bearerAuth: [] }]
+      summary: 重命名会话（title_source 置为 user）
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '404':
+          description: 会话不存在
+    delete:
+      tags: [Sessions]
+      security: [{ bearerAuth: [] }]
+      summary: 删除会话（级联消息）
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: 已删除
+        '404':
+          description: 会话不存在
+
+  /api/chat/stream:
+    post:
+      tags: [Chat]
+      security: [{ bearerAuth: [] }]
+      summary: 对话流式（SSE）
+      description: |
+        请求体必须包含 `session_id` 与非空 `message`。
+
+        **响应体**为 UTF-8 的 SSE 流，非 JSON 单对象。典型帧示例：
+
+        ```
+        event: status
+        data: {"phase":"connected"}
+
+        event: intention
+        data: {"intention":"default"}
+
+        event: citation
+        data: {"kind":"document","file_id":"...","excerpt":"...","score":0.82}
+
+        event: token
+        data: {"content":"你好"}
+
+        event: done
+        data: {}
+        ```
+
+        错误时可能返回 `application/json`（如 400/401/404/503）而非 SSE。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatStreamRequest' }
+            example:
+              session_id: 00000000-0000-4000-8000-000000000000
+              message: 你好
+      responses:
+        '200':
+          description: SSE 流
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: |
+                  event: status
+                  data: {"phase":"connected"}
+
+                  event: done
+                  data: {}
+        '400':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorBody' }
+        '404':
+          description: 会话不存在
+        '503':
+          description: LLM 未配置
+
+  /api/user:
+    get:
+      tags: [User]
+      security: [{ bearerAuth: [] }]
+      summary: 当前用户资料
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+    put:
+      tags: [User]
+      security: [{ bearerAuth: [] }]
+      summary: 更新资料（name 全库唯一；email 可为 null）
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserPutRequest' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+        '409':
+          description: NAME_CONFLICT 或邮箱冲突
+
+  /api/user/ai-name:
+    put:
+      tags: [User]
+      security: [{ bearerAuth: [] }]
+      summary: 更新 AI 助手昵称
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nickname]
+              properties:
+                nickname: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+
+  /api/tasks:
+    get:
+      tags: [Tasks]
+      security: [{ bearerAuth: [] }]
+      summary: 任务列表
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: project_id
+          in: query
+          schema: { type: string, nullable: true }
+      responses:
+        '200':
+          description: 任务数组（结构见实现 taskRowToApi）
+    post:
+      tags: [Tasks]
+      security: [{ bearerAuth: [] }]
+      summary: 创建任务
+      responses:
+        '201':
+          description: Created
+
+  /api/tasks/{id}:
+    get:
+      tags: [Tasks]
+      security: [{ bearerAuth: [] }]
+      summary: 任务详情
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+        '404':
+          description: 不存在
+    put:
+      tags: [Tasks]
+      security: [{ bearerAuth: [] }]
+      summary: 更新任务（含 detail / detail_json）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+    delete:
+      tags: [Tasks]
+      security: [{ bearerAuth: [] }]
+      summary: 删除任务
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: 已删除
+
+  /api/workspace:
+    get:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      summary: 工作空间文件列表
+      description: |
+        `folder` 与 `folder_path` 等价；`folder` 为空串表示仅根目录；非空为 `folder_path` 前缀匹配。
+      parameters:
+        - name: folder
+          in: query
+          schema: { type: string }
+        - name: folder_path
+          in: query
+          schema: { type: string }
+        - name: type
+          in: query
+          description: semantic_type 过滤
+          schema: { type: string }
+      responses:
+        '200':
+          description: 文件元数据数组（含 processed 等）
+
+  /api/workspace/events:
+    get:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      summary: 工作空间文件变更（SSE）
+      description: |
+        `text/event-stream`；首包 `snapshot`，随后 `file_status` / `file_removed` / `processing_idle` / `error`。
+        查询参数与 `GET /api/workspace` 相同。
+      parameters:
+        - name: folder
+          in: query
+          schema: { type: string }
+        - name: folder_path
+          in: query
+          schema: { type: string }
+        - name: type
+          in: query
+          description: semantic_type 过滤
+          schema: { type: string }
+      responses:
+        '200':
+          description: SSE 流
+          content:
+            text/event-stream:
+              schema: { type: string }
+
+  /api/files/upload:
+    post:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      summary: 小文件 multipart/form 上传
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                semantic_type: { type: string }
+                folder_path: { type: string }
+                tags:
+                  type: string
+                  description: JSON 数组字符串
+      responses:
+        '201':
+          description: 已创建
+
+  /api/files/initiate-multipart:
+    post:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      summary: 大文件分片上传 — 初始化
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, size]
+              properties:
+                filename: { type: string }
+                original_name: { type: string }
+                mime_type: { type: string }
+                size: { type: number }
+                semantic_type: { type: string, nullable: true }
+                folder_path: { type: string }
+                tags:
+                  type: array
+                  items: { type: string }
+      responses:
+        '200':
+          description: upload_id、r2_key、part_urls
+
+  /api/files/complete-multipart:
+    post:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      summary: 大文件分片上传 — 完成
+      responses:
+        '200':
+          description: OK
+
+  /api/files/{id}:
+    get:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      summary: 单文件元数据（含异步处理状态 processed）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+        '404':
+          description: 不存在
+    delete:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      summary: 删除文件
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+
+  /api/files/{id}/rename:
+    put:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      summary: 重命名
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_name]
+              properties:
+                new_name: { type: string }
+      responses:
+        '200':
+          description: OK
+
+  /api/files/{id}/semantic-type:
+    put:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      summary: 更新语义类型
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                semantic_type: { type: string, nullable: true }
+      responses:
+        '200':
+          description: OK
+
+  /api/files/{id}/tags:
+    put:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      summary: 更新标签
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tags]
+              properties:
+                tags:
+                  type: array
+                  items: { type: string }
+      responses:
+        '200':
+          description: OK
+
+  /api/files/{id}/download:
+    get:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      summary: 获取预签名下载 URL
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string }
+
+  /api/files/{id}/retry-process:
+    post:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      summary: 异步解析/向量化失败后重试
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+
+  /api/prompts:
+    get:
+      tags: [PromptsAdmin]
+      security: [{ bearerAuth: [], adminToken: [] }]
+      summary: 列出 Prompt 模板（管理员）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PromptTemplate' }
+        '401':
+          description: 未授权
+        '503':
+          description: ADMIN_NOT_CONFIGURED
+    post:
+      tags: [PromptsAdmin]
+      security: [{ bearerAuth: [] }]
+      summary: 创建模板
+      responses:
+        '201':
+          description: Created
+
+  /api/prompts/{id}:
+    get:
+      tags: [PromptsAdmin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PromptTemplate' }
+    put:
+      tags: [PromptsAdmin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+    delete:
+      tags: [PromptsAdmin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK

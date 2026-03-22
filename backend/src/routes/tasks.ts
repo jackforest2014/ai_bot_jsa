@@ -9,7 +9,7 @@ export const taskRoutes = new Hono<{ Bindings: Env }>();
 taskRoutes.get('/', async (c) => {
   const db = getDb(c.env.task_assistant_db);
   const users = new UserRepository(db);
-  const user = await requireUserFromBearer(c.req.header('Authorization'), users);
+  const user = await requireUserFromBearer(c.req.header('Authorization'), users, c.env);
   const tasks = new TaskRepository(db);
 
   const status = c.req.query('status')?.trim();
@@ -29,7 +29,7 @@ taskRoutes.get('/', async (c) => {
 taskRoutes.post('/', async (c) => {
   const db = getDb(c.env.task_assistant_db);
   const users = new UserRepository(db);
-  const user = await requireUserFromBearer(c.req.header('Authorization'), users);
+  const user = await requireUserFromBearer(c.req.header('Authorization'), users, c.env);
   const tasks = new TaskRepository(db);
 
   let body: unknown;
@@ -85,7 +85,7 @@ taskRoutes.post('/', async (c) => {
 taskRoutes.put('/:id', async (c) => {
   const db = getDb(c.env.task_assistant_db);
   const users = new UserRepository(db);
-  const user = await requireUserFromBearer(c.req.header('Authorization'), users);
+  const user = await requireUserFromBearer(c.req.header('Authorization'), users, c.env);
   const tasks = new TaskRepository(db);
   const id = c.req.param('id')?.trim();
   if (!id) {
@@ -149,7 +149,7 @@ taskRoutes.put('/:id', async (c) => {
 taskRoutes.delete('/:id', async (c) => {
   const db = getDb(c.env.task_assistant_db);
   const users = new UserRepository(db);
-  const user = await requireUserFromBearer(c.req.header('Authorization'), users);
+  const user = await requireUserFromBearer(c.req.header('Authorization'), users, c.env);
   const tasks = new TaskRepository(db);
   const id = c.req.param('id')?.trim();
   if (!id) {

@@ -374,7 +374,7 @@
 | size | INTEGER | NOT NULL | 文件大小（字节） |
 | r2_key | TEXT | NOT NULL | 在 R2 中的存储路径 |
 | semantic_type | TEXT | NULL | 用户标记的语义类型（简历、学习资料、小抄等） |
-| folder_path | TEXT | NOT NULL DEFAULT '' | 工作空间内逻辑路径（如 `学习资料/2024`），根目录为空字符串；与 `GET /api/files?folder=` 前缀匹配 |
+| folder_path | TEXT | NOT NULL DEFAULT '' | 工作空间内逻辑路径（如 `学习资料/2024`），根目录为空字符串；与 `GET /api/workspace?folder=` 前缀匹配 |
 | tags | TEXT | NULL | 标签 JSON 数组字符串，如 `["important"]`，支持对话中「标记为重要」等指令 |
 | processed | INTEGER | NOT NULL DEFAULT 0 | 异步处理状态：`0` 未处理或处理中，`1` 已向量化写入 Qdrant，`-1` 文本提取或向量化失败（仍可下载，可重试） |
 | created_at | INTEGER | NOT NULL | 上传时间 |
@@ -816,7 +816,7 @@ data: {}
 
 #### 5.4.1 获取文件列表
 
-**GET /api/files**
+**GET /api/workspace**
 
 查询参数：
 - `folder`（可选）：逻辑路径前缀，与 `file_uploads.folder_path` 匹配（根目录传空或不传）；**v1.1 为扁平路径字符串**，非树形 inode，后续可演进为独立文件夹表。

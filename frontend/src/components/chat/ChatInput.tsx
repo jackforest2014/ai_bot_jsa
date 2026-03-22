@@ -42,10 +42,10 @@ export default function ChatInput({
   }
 
   return (
-    <div className="relative rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="relative rounded-lg border border-cyan-500/25 bg-slate-950/60 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-sm">
       {isStreaming ? (
         <div
-          className="pointer-events-none absolute inset-0 z-10 rounded-lg border-2 border-sky-400/40 animate-pulse"
+          className="pointer-events-none absolute inset-0 z-10 rounded-lg border-2 border-cyan-400/35 animate-pulse"
           aria-hidden
         />
       ) : null}
@@ -62,14 +62,14 @@ export default function ChatInput({
           placeholder={placeholder}
           disabled={inputDisabled}
           aria-busy={isStreaming}
-          className="min-h-[5.5rem] w-full resize-y rounded-md border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-[5.5rem] w-full resize-y rounded-md border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500/60 focus:outline-none focus:ring-1 focus:ring-cyan-500/40 disabled:cursor-not-allowed disabled:opacity-60"
         />
         {isStreaming ? (
-          <div className="flex items-center gap-2 px-1 text-xs text-sky-700" aria-live="polite">
+          <div className="flex items-center gap-2 px-1 text-xs text-cyan-300/90" aria-live="polite">
             <span className="inline-flex gap-0.5" aria-hidden>
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-sky-500 [animation-delay:-0.2s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-sky-500 [animation-delay:-0.1s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-sky-500" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400 [animation-delay:-0.2s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400 [animation-delay:-0.1s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400" />
             </span>
             <span>正在生成回复…</span>
           </div>
@@ -79,7 +79,7 @@ export default function ChatInput({
             <button
               type="button"
               onClick={() => onAbort()}
-              className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100"
+              className="rounded-md border border-amber-500/40 bg-amber-950/50 px-3 py-1.5 text-sm font-medium text-amber-100 hover:bg-amber-950/70"
             >
               停止
             </button>
@@ -88,7 +88,7 @@ export default function ChatInput({
             type="button"
             onClick={submit}
             disabled={inputDisabled || !value.trim()}
-            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+            className="rounded-md border border-cyan-500/40 bg-gradient-to-r from-cyan-700 to-cyan-600 px-3 py-1.5 text-sm font-medium text-white shadow-[0_0_20px_rgba(6,182,212,0.25)] hover:from-cyan-600 hover:to-cyan-500 disabled:cursor-not-allowed disabled:border-slate-600 disabled:from-slate-700 disabled:to-slate-700 disabled:shadow-none"
           >
             发送
           </button>

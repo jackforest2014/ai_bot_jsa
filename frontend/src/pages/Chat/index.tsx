@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import ChatInput from '@/components/chat/ChatInput'
@@ -7,6 +7,7 @@ import MessageList from '@/components/chat/MessageList'
 import TaskSidebar from '@/components/tasks/TaskSidebar'
 import { useChatStream } from '@/hooks/useChatStream'
 import { isProfileIncomplete } from '@/lib/profile'
+import { useChatSessionStore } from '@/store/chatSessionStore'
 import { useUserStore } from '@/store/userStore'
 
 export default function ChatPage() {
@@ -15,27 +16,41 @@ export default function ChatPage() {
   const profileHydrated = useUserStore((s) => s.profileHydrated)
   const profileLoading = useUserStore((s) => s.profileLoading)
 
-  const { messages, send, retryAfterUserMessage, stop, streaming, error, streamStatusHint } =
-    useChatStream()
+  const sessions = useChatSessionStore((s) => s.sessions)
+  const activeSessionId = useChatSessionStore((s) => s.activeSessionId)
+
+  const {
+    messages,
+    send,
+    retryAfterUserMessage,
+    stop,
+    streaming,
+    error,
+    streamStatusHint,
+    historyLoading,
+  } = useChatStream()
   const [draft, setDraft] = useState('')
 
-  const showSyncing = Boolean(token && !profileHydrated && profileLoading)
+  const showSyncing = Boolean(token && profileLoading && !user)
   const showUserError = Boolean(token && profileHydrated && !user)
-  // 须等 AppShell 完成 GET /api/user；勿用 localStorage 里残留 user 提前打开任务侧栏（会带无效 Bearer 刷 401）
-  const inputDisabled = Boolean(
-    !token || !user || !profileHydrated || showSyncing || showUserError,
-  )
+  const awaitingUser = Boolean(token && !user && (!profileHydrated || profileLoading))
+  const inputDisabled = Boolean(!token || !user || showUserError || awaitingUser)
+
+  const sessionTitle = useMemo(() => {
+    if (!activeSessionId) return '对话'
+    return sessions.find((s) => s.id === activeSessionId)?.title ?? '对话'
+  }, [sessions, activeSessionId])
+
+  const chatBlocked = inputDisabled || historyLoading
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-semibold text-slate-900">对话</h2>
-
-      {showSyncing ? <p className="text-sm text-slate-600">正在同步用户信息…</p> : null}
+    <div className="space-y-3">
+      {showSyncing ? <p className="text-sm text-slate-400">正在同步用户信息…</p> : null}
 
       {showUserError ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+        <div className="rounded-lg border border-red-500/35 bg-red-950/40 px-3 py-2 text-sm text-red-100">
           未能加载用户资料，请检查令牌后重新
-          <Link to="/login" className="ml-1 font-medium underline">
+          <Link to="/login" className="ml-1 font-medium text-cyan-300 underline hover:text-cyan-200">
             登录
           </Link>
           。
@@ -43,71 +58,81 @@ export default function ChatPage() {
       ) : null}
 
       {user && isProfileIncomplete(user) ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-          资料尚未补充完整。AI 会在对话中引导补全姓名与邮箱；也可前往{' '}
-          <Link to="/settings" className="font-medium underline">
+        <div className="rounded-lg border border-amber-500/35 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
+          显示名称尚未同步。AI 可在首轮对话中引导补全；也可前往{' '}
+          <Link to="/settings" className="font-medium text-cyan-300 underline hover:text-cyan-200">
             设置
           </Link>{' '}
-          补充。
+          查看资料。
         </div>
       ) : null}
 
-      <ChatStatusIndicator />
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-stretch">
+        <div className="flex min-w-0 flex-1 justify-center">
+          <div className="flex w-full max-w-3xl flex-col gap-3">
+            <header className="flex flex-col gap-1 px-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+              <h2
+                className="truncate bg-gradient-to-r from-cyan-200 via-slate-100 to-slate-300 bg-clip-text text-lg font-semibold text-transparent"
+                title={sessionTitle}
+              >
+                {sessionTitle}
+              </h2>
+              <ChatStatusIndicator />
+            </header>
 
-      {error ? (
-        <p className="text-sm text-red-700" role="alert">
-          {error}
-        </p>
-      ) : null}
+            {error ? (
+              <p className="text-sm text-red-300" role="alert">
+                {error}
+              </p>
+            ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,300px)] lg:items-start">
-        <div className="min-w-0 space-y-4">
-          <div className="max-h-[50vh] overflow-y-auto rounded-lg border border-slate-200 bg-white p-3">
-            <MessageList
-              messages={messages}
-              className="min-h-0"
-              onRetryAfterUser={(userId) => void retryAfterUserMessage(userId)}
-              emptyHint={
-                <p className="text-sm text-slate-500">
-                  发送消息以开始对话（流式 URL：`apiUrl(&apos;/api/chat/stream&apos;)`）。
-                </p>
+            {historyLoading ? <p className="text-sm text-slate-400">正在加载本会话…</p> : null}
+
+            <div className="min-h-[40vh] flex-1 overflow-y-auto rounded-xl border border-cyan-500/20 bg-slate-950/55 p-3 shadow-[inset_0_1px_0_rgba(34,211,238,0.06),0_12px_40px_rgba(0,0,0,0.35)] backdrop-blur-sm sm:p-4">
+              <MessageList
+                messages={messages}
+                className="min-h-0"
+                onRetryAfterUser={retryAfterUserMessage}
+                emptyHint={
+                  <p className="text-sm text-slate-500">
+                    {historyLoading ? '…' : '发送消息开始对话；会话与历史在左侧列表切换。'}
+                  </p>
+                }
+              />
+            </div>
+
+            {streamStatusHint ? (
+              <p className="text-sm text-slate-400" aria-live="polite">
+                {streamStatusHint}
+              </p>
+            ) : null}
+
+            <ChatInput
+              value={draft}
+              onChange={setDraft}
+              onSend={(text) => {
+                void send(text)
+                setDraft('')
+              }}
+              isStreaming={streaming}
+              onAbort={stop}
+              disabled={chatBlocked}
+              placeholder={
+                historyLoading ? '正在加载会话历史…' : '输入消息，Enter 发送，Shift+Enter 换行'
               }
             />
           </div>
-
-          {streamStatusHint ? (
-            <p className="text-sm text-slate-600" aria-live="polite">
-              {streamStatusHint}
-            </p>
-          ) : null}
-
-          <ChatInput
-            value={draft}
-            onChange={setDraft}
-            onSend={(text) => {
-              void send(text)
-              setDraft('')
-            }}
-            isStreaming={streaming}
-            onAbort={stop}
-            disabled={inputDisabled}
-            placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-          />
         </div>
 
-        <TaskSidebar
-          disabled={inputDisabled}
-          onInsertSnippet={(snippet) => setDraft((d) => (d.trim() ? `${d}\n${snippet}` : snippet))}
-        />
+        <div className="w-full shrink-0 lg:w-72">
+          <TaskSidebar
+            disabled={inputDisabled}
+            onInsertSnippet={(snippet) =>
+              setDraft((d) => (d.trim() ? `${d}\n${snippet}` : snippet))
+            }
+          />
+        </div>
       </div>
-
-      <p className="text-xs text-slate-500">
-        已安装 <code className="rounded bg-slate-100 px-1">ai</code> /{' '}
-        <code className="rounded bg-slate-100 px-1">@ai-sdk/react</code>
-        ，当前按技术方案采用 <code className="rounded bg-slate-100 px-1">fetch</code> 自解析
-        SSE；后续可改用
-        <code className="rounded bg-slate-100 px-1">useChat</code> 自定义 transport。
-      </p>
     </div>
   )
 }

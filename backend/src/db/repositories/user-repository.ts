@@ -19,6 +19,19 @@ export class UserRepository {
     return rows[0];
   }
 
+  async findByName(name: string): Promise<UserRow | undefined> {
+    const trimmed = name.trim();
+    if (!trimmed) return undefined;
+    const rows = await this.db.select().from(users).where(eq(users.name, trimmed)).limit(1);
+    return rows[0];
+  }
+
+  /** 名称是否已被其他用户占用 */
+  async isNameTakenByOther(name: string, excludeUserId: string): Promise<boolean> {
+    const row = await this.findByName(name);
+    return !!row && row.id !== excludeUserId;
+  }
+
   async insert(row: NewUserRow): Promise<void> {
     await this.db.insert(users).values(row);
   }

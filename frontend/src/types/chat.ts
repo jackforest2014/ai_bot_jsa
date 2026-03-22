@@ -1,5 +1,13 @@
 import type { CitationPayload, ToolResultMetaPayload } from '@/types/sse'
 
+/** 与 GET /api/sessions 对齐（技术方案 §5.1.1） */
+export interface ChatSession {
+  id: string
+  title: string
+  created_at: number
+  updated_at: number
+}
+
 /** 对话消息（内存 / 可选本地缓存），供 SSE、useChatStream 使用 */
 export type ChatRole = 'user' | 'assistant' | 'system'
 
@@ -25,5 +33,6 @@ export interface ChatMessage {
 
 export interface ChatStreamRequestBody {
   message: string
-  conversation_id?: string
+  /** 与后端 §5.1 一致；当前选中会话 */
+  session_id: string
 }

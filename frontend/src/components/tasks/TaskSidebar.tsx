@@ -29,18 +29,20 @@ export default function TaskSidebar({ onInsertSnippet, disabled }: TaskSidebarPr
 
   if (disabled) {
     return (
-      <aside className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 px-3 py-6 text-center text-xs text-slate-500">
+      <aside className="rounded-lg border border-dashed border-cyan-500/25 bg-slate-950/40 px-3 py-6 text-center text-xs text-slate-500">
         登录后可管理任务侧栏
       </aside>
     )
   }
 
   return (
-    <aside className="flex max-h-[min(70vh,640px)] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 px-3 py-2">
-        <h3 className="text-sm font-semibold text-slate-900">任务</h3>
+    <aside className="flex max-h-[min(70vh,640px)] flex-col overflow-hidden rounded-lg border border-cyan-500/20 bg-slate-950/60 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-sm">
+      <div className="border-b border-cyan-500/15 px-3 py-2">
+        <h3 className="bg-gradient-to-r from-cyan-200 to-slate-300 bg-clip-text text-sm font-semibold text-transparent">
+          任务
+        </h3>
         <div className="mt-2 space-y-2">
-          <label className="block text-[11px] font-medium text-slate-600">
+          <label className="block text-[11px] font-medium text-slate-400">
             状态
             <select
               value={query.status ?? ''}
@@ -48,14 +50,14 @@ export default function TaskSidebar({ onInsertSnippet, disabled }: TaskSidebarPr
                 const v = e.target.value
                 setQuery((q) => ({ ...q, status: v || undefined }))
               }}
-              className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1 text-xs"
+              className="mt-0.5 w-full rounded border border-slate-600/80 bg-slate-900/70 px-2 py-1 text-xs text-slate-100"
             >
               <option value="">全部</option>
               <option value="pending">pending</option>
               <option value="done">done</option>
             </select>
           </label>
-          <label className="flex cursor-pointer items-center gap-2 text-[11px] text-slate-600">
+          <label className="flex cursor-pointer items-center gap-2 text-[11px] text-slate-400">
             <input
               type="checkbox"
               checked={query.project_id === null}
@@ -68,7 +70,7 @@ export default function TaskSidebar({ onInsertSnippet, disabled }: TaskSidebarPr
             />
             仅未归属项目
           </label>
-          <label className="block text-[11px] font-medium text-slate-600">
+          <label className="block text-[11px] font-medium text-slate-400">
             项目 ID
             <input
               type="text"
@@ -84,7 +86,7 @@ export default function TaskSidebar({ onInsertSnippet, disabled }: TaskSidebarPr
               }}
               disabled={query.project_id === null}
               placeholder="可选，过滤 project_id"
-              className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1 text-xs disabled:bg-slate-100"
+              className="mt-0.5 w-full rounded border border-slate-600/80 bg-slate-900/70 px-2 py-1 text-xs text-slate-100 placeholder:text-slate-500 disabled:opacity-50"
             />
           </label>
         </div>
@@ -105,12 +107,12 @@ export default function TaskSidebar({ onInsertSnippet, disabled }: TaskSidebarPr
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="新建任务标题"
-            className="min-w-0 flex-1 rounded border border-slate-200 px-2 py-1 text-xs"
+            className="min-w-0 flex-1 rounded border border-slate-600/80 bg-slate-900/70 px-2 py-1 text-xs text-slate-100 placeholder:text-slate-500"
           />
           <button
             type="submit"
             disabled={!newTitle.trim()}
-            className="shrink-0 rounded bg-slate-900 px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
+            className="shrink-0 rounded border border-cyan-500/40 bg-cyan-900/40 px-2 py-1 text-xs font-medium text-cyan-100 hover:bg-cyan-900/55 disabled:opacity-40"
           >
             添加
           </button>
@@ -118,7 +120,7 @@ export default function TaskSidebar({ onInsertSnippet, disabled }: TaskSidebarPr
       </div>
 
       {error ? (
-        <p className="px-3 py-1 text-xs text-red-600" role="alert">
+        <p className="px-3 py-1 text-xs text-red-300" role="alert">
           {error}
         </p>
       ) : null}

@@ -7,6 +7,7 @@ import {
   type SerperQuotaService,
   type SerperSearchType,
 } from '../serper';
+import { recordMetric } from '../observability/metrics';
 
 export type SearchToolOptions = SerperClientOptions & {
   quota: SerperQuotaService;
@@ -83,6 +84,13 @@ export function createSearchTool(opts: SearchToolOptions): Tool {
 
       const q = await opts.quota.check(ctx.userId);
       if (!q.ok) {
+        recordMetric('search_executed', {
+          ok: false,
+          reason: 'quota',
+          user_id: ctx.userId,
+          count: q.count,
+          limit: q.limit,
+        });
         return {
           output: JSON.stringify({
             ok: false,
@@ -104,6 +112,11 @@ export function createSearchTool(opts: SearchToolOptions): Tool {
         data = await serperRequest(opts, type, query, num);
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
+        recordMetric('search_executed', {
+          ok: false,
+          reason: 'serper_error',
+          user_id: ctx.userId,
+        });
         return {
           output: JSON.stringify({
             ok: false,
@@ -119,8 +132,13 @@ export function createSearchTool(opts: SearchToolOptions): Tool {
       }
 
       await opts.quota.recordSuccessfulSearch(ctx.userId);
-
       const itemsRaw = extractSerperItemsForMeta(type, data);
+      recordMetric('search_executed', {
+        ok: true,
+        user_id: ctx.userId,
+        type,
+        result_count: itemsRaw.length,
+      });
       const items = normalizeMetaItems(itemsRaw);
 
       const payload: Record<string, unknown> = {

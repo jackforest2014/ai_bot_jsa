@@ -69,7 +69,7 @@ export default function ToolCallMark({
     <div className="group/tool relative z-0 inline-flex max-w-full align-baseline hover:z-30 focus-within:z-30">
       <button
         type="button"
-        className="mx-0.5 inline-flex max-w-full cursor-pointer items-center rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 align-baseline text-xs font-medium text-sky-900 outline-none ring-sky-400/60 hover:bg-sky-100 focus-visible:ring-2"
+        className="mx-0.5 inline-flex max-w-full cursor-pointer items-center rounded border border-cyan-500/40 bg-cyan-950/45 px-1.5 py-0.5 align-baseline text-xs font-medium text-cyan-100 outline-none ring-cyan-400/35 hover:border-cyan-400/55 hover:bg-cyan-950/65 focus-visible:ring-2"
         aria-haspopup="dialog"
         aria-label={`工具：${label}${displayQuery ? `，查询 ${displayQuery}` : ''}`}
       >
@@ -80,18 +80,18 @@ export default function ToolCallMark({
         role="dialog"
         aria-label="工具结果详情"
       >
-        <div className="pointer-events-auto max-h-72 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 text-left text-xs text-slate-800 shadow-lg">
+        <div className="pointer-events-auto max-h-72 overflow-y-auto rounded-lg border border-slate-600/80 bg-slate-950/95 p-3 text-left text-xs text-slate-200 shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
           {!hasBody ? (
             <p className="text-slate-500">暂无结构化摘要（等待 SSE 或正文解析）。</p>
           ) : null}
           {displayQuery ? (
-            <p className="mb-2 font-medium text-slate-900">
-              查询：<span className="font-normal text-slate-700">{displayQuery}</span>
+            <p className="mb-2 font-medium text-slate-100">
+              查询：<span className="font-normal text-slate-400">{displayQuery}</span>
             </p>
           ) : null}
           {toolMeta?.raw_ref ? (
-            <p className="mb-2 break-all text-slate-600">
-              <span className="font-medium text-slate-800">ref：</span>
+            <p className="mb-2 break-all text-slate-400">
+              <span className="font-medium text-slate-200">ref：</span>
               {String(toolMeta.raw_ref)}
             </p>
           ) : null}
@@ -104,24 +104,24 @@ export default function ToolCallMark({
                 const snippet = typeof row.snippet === 'string' ? row.snippet : undefined
                 const date = row.date
                 return (
-                  <li key={i} className="border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                  <li key={i} className="border-b border-slate-700/80 pb-2 last:border-0 last:pb-0">
                     {url ? (
                       <a
                         href={url}
                         target="_blank"
                         rel="noreferrer noopener"
-                        className="font-medium text-sky-700 hover:underline"
+                        className="font-medium text-cyan-300 hover:underline"
                       >
                         {title}
                       </a>
                     ) : (
-                      <span className="font-medium text-slate-900">{title}</span>
+                      <span className="font-medium text-slate-100">{title}</span>
                     )}
                     {snippet ? (
-                      <p className="mt-0.5 line-clamp-3 text-slate-600">{snippet}</p>
+                      <p className="mt-0.5 line-clamp-3 text-slate-400">{snippet}</p>
                     ) : null}
                     {date != null && date !== '' ? (
-                      <p className="mt-0.5 text-[0.65rem] text-slate-400">{String(date)}</p>
+                      <p className="mt-0.5 text-[0.65rem] text-slate-500">{String(date)}</p>
                     ) : null}
                   </li>
                 )

@@ -24,7 +24,7 @@ export default function TaskDetailPanel({ task }: TaskDetailPanelProps) {
 
   if (!task) {
     return (
-      <div className="border-t border-slate-200 bg-slate-50/80 px-3 py-4 text-center text-xs text-slate-500">
+      <div className="border-t border-cyan-500/15 bg-slate-950/50 px-3 py-4 text-center text-xs text-slate-500">
         选择一条任务可查看详情与子任务
       </div>
     )
@@ -68,14 +68,14 @@ export default function TaskDetailPanel({ task }: TaskDetailPanelProps) {
       ) : null}
 
       {showRaw && rawJson ? (
-        <pre className="max-h-40 overflow-auto rounded border border-slate-200 bg-white p-2 text-[11px] leading-snug text-slate-800">
+        <pre className="max-h-40 overflow-auto rounded border border-slate-600/80 bg-slate-900/80 p-2 text-[11px] leading-snug text-slate-200">
           {rawJson}
         </pre>
       ) : null}
 
-      {!subtasks && !rawJson ? <p className="text-xs text-slate-400">无结构化 detail</p> : null}
+      {!subtasks && !rawJson ? <p className="text-xs text-slate-500">无结构化 detail</p> : null}
 
-      <p className="mt-2 text-[10px] text-slate-400">
+      <p className="mt-2 text-[10px] text-slate-500">
         更新于 {task.updated_at ? new Date(task.updated_at * 1000).toLocaleString() : '—'}
       </p>
     </div>

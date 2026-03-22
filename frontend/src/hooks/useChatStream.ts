@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 
+import { sessionsAPI } from '@/api/sessions'
 import { consumeChatStream } from '@/lib/chat-stream'
 import type { ChatMessage, StreamMessageMeta } from '@/types/chat'
 import type { CitationPayload, SseEvent, ToolResultMetaPayload } from '@/types/sse'
+import { useChatSessionStore } from '@/store/chatSessionStore'
 import type { ChatStatus } from '@/store/uiStore'
 import { useUiStore } from '@/store/uiStore'
 
@@ -62,6 +64,8 @@ export interface UseChatStreamResult {
   error: string | null
   /** 流式阶段提示（输入框上方展示）；无提示时为 null */
   streamStatusHint: string | null
+  /** 切换会话拉取历史期间为 true，避免未完成加载时发送导致状态被覆盖（任务 4.5） */
+  historyLoading: boolean
 }
 
 /**
@@ -69,13 +73,14 @@ export interface UseChatStreamResult {
  */
 export function useChatStream(): UseChatStreamResult {
   const setChatStatus = useUiStore((s) => s.setChatStatus)
+  const activeSessionId = useChatSessionStore((s) => s.activeSessionId)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [streamStatusHint, setStreamStatusHint] = useState<string | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const assistantIdRef = useRef<string | null>(null)
-  const conversationIdRef = useRef<string | undefined>(undefined)
   const messagesRef = useRef<ChatMessage[]>([])
 
   useEffect(() => {
@@ -85,6 +90,40 @@ export function useChatStream(): UseChatStreamResult {
   const stop = useCallback(() => {
     abortRef.current?.abort()
   }, [])
+
+  useEffect(() => {
+    abortRef.current?.abort()
+    setStreamStatusHint(null)
+    if (!activeSessionId) {
+      setMessages([])
+      setError(null)
+      setHistoryLoading(false)
+      return
+    }
+    let cancelled = false
+    setHistoryLoading(true)
+    setMessages([])
+    setError(null)
+    sessionsAPI
+      .messages(activeSessionId)
+      .then((msgs) => {
+        if (cancelled) return
+        if (useChatSessionStore.getState().activeSessionId !== activeSessionId) return
+        setMessages(msgs)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          toast.error('加载历史消息失败')
+          setMessages([])
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeSessionId])
 
   const updateAssistantMeta = useCallback(
     (updater: (m: StreamMessageMeta) => StreamMessageMeta) => {
@@ -175,17 +214,23 @@ export function useChatStream(): UseChatStreamResult {
   )
 
   const runAssistantStream = useCallback(
-    async (userText: string, assistantId: string, ac: AbortController) => {
+    async (userText: string, assistantId: string, ac: AbortController, sessionId: string) => {
       assistantIdRef.current = assistantId
       setChatStatus('thinking')
       try {
         await consumeChatStream({
           message: userText,
-          conversation_id: conversationIdRef.current,
+          session_id: sessionId,
           signal: ac.signal,
           onEvent: dispatchEvent,
         })
         setError(null)
+        void sessionsAPI
+          .list()
+          .then((list) => {
+            if (Array.isArray(list)) useChatSessionStore.getState().setSessions(list)
+          })
+          .catch(() => {})
       } catch (e) {
         if (e instanceof Error && e.name === 'AbortError') {
           setChatStatus('idle')
@@ -214,7 +259,16 @@ export function useChatStream(): UseChatStreamResult {
   const send = useCallback(
     async (text: string) => {
       const trimmed = text.trim()
-      if (!trimmed || streaming) return
+      if (!trimmed || streaming || historyLoading) return
+
+      let sessionId: string
+      try {
+        sessionId = await useChatSessionStore.getState().ensureActiveSession()
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '无法创建或选中会话'
+        toast.error(msg)
+        return
+      }
 
       abortRef.current?.abort()
       const ac = new AbortController()
@@ -239,14 +293,14 @@ export function useChatStream(): UseChatStreamResult {
       setStreamStatusHint(null)
       setMessages((prev) => [...prev, userMsg, assistantMsg])
       setStreaming(true)
-      await runAssistantStream(trimmed, assistantId, ac)
+      await runAssistantStream(trimmed, assistantId, ac, sessionId)
     },
-    [runAssistantStream, streaming],
+    [runAssistantStream, streaming, historyLoading],
   )
 
   const retryAfterUserMessage = useCallback(
     async (userMessageId: string) => {
-      if (streaming) return
+      if (streaming || historyLoading) return
       const prev = messagesRef.current
       const i = prev.findIndex((m) => m.id === userMessageId && m.role === 'user')
       if (i < 0) return
@@ -254,6 +308,15 @@ export function useChatStream(): UseChatStreamResult {
       if (!after || after.role !== 'assistant') return
       const userText = prev[i].content.trim()
       if (!userText) return
+
+      let sessionId: string
+      try {
+        sessionId = await useChatSessionStore.getState().ensureActiveSession()
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '无法创建或选中会话'
+        toast.error(msg)
+        return
+      }
 
       const newAssistantId = crypto.randomUUID()
       const freshAssistant: ChatMessage = {
@@ -272,10 +335,19 @@ export function useChatStream(): UseChatStreamResult {
       setStreamStatusHint(null)
       setMessages([...prev.slice(0, i + 1), freshAssistant, ...prev.slice(i + 2)])
       setStreaming(true)
-      await runAssistantStream(userText, newAssistantId, ac)
+      await runAssistantStream(userText, newAssistantId, ac, sessionId)
     },
-    [streaming, runAssistantStream],
+    [streaming, historyLoading, runAssistantStream],
   )
 
-  return { messages, send, retryAfterUserMessage, stop, streaming, error, streamStatusHint }
+  return {
+    messages,
+    send,
+    retryAfterUserMessage,
+    stop,
+    streaming,
+    error,
+    streamStatusHint,
+    historyLoading,
+  }
 }

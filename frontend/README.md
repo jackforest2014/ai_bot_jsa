@@ -2,6 +2,8 @@
 
 与仓库根目录 **`backend/`** 并列的 Vite + **React 18** + TypeScript 应用，对齐 `docs/technical/tech_design_frontend_v1_2.md` 与 `docs/tasks/tasks_frontend_v1_2.md`。
 
+**E2E（Playwright）与生产构建验收的完整可复现说明**：[`docs/testing/frontend_e2e_and_build.md`](../docs/testing/frontend_e2e_and_build.md)（任务 7.2 / 7.3）。
+
 ## 前置
 
 - Node.js 18+（与后端 README 一致）。当前锁定 **Vite 5** 以便在 Node 20.17 等环境稳定构建；若本机已 ≥20.19，亦可后续再评估升级 Vite 大版本。
@@ -17,6 +19,38 @@
 | `npm run lint`         | ESLint                                   |
 | `npm run format`       | Prettier 写入                            |
 | `npm run format:check` | Prettier 检查                            |
+| `npm run test:e2e`     | Playwright 端到端（阶段七 · 7.2）        |
+| `npm run test:e2e:ui`  | Playwright UI 模式                       |
+
+## 端到端测试（Playwright，任务 7.2）
+
+**完整步骤、前置条件、规格对照、CI 与排错**以 **[`docs/testing/frontend_e2e_and_build.md`](../docs/testing/frontend_e2e_and_build.md)** 为准。以下为最常用快捷命令。
+
+> **`E2E_BASE_URL` 必须是前端（Vite，默认 5173），不是 Worker API（8787）。** 浏览器先打开 SPA，再由 Vite 把 `/api` 代理到 `127.0.0.1:8787`。
+
+1. **终端 A**：`cd ../backend && npm run dev`（API：`http://localhost:8787` 或 `http://127.0.0.1:8787`）。
+2. **终端 B（可选）**：`cd frontend && npm run dev`。若省略，在已设 **`E2E_BASE_URL`** 且**未**设 **`E2E_SKIP_WEB_SERVER=1`** 时，Playwright 会自动执行 `npm run dev` 拉起 Vite。
+3. **首次**：`cd frontend && npx playwright install chromium`。
+4. **跑用例**（须设置基址，否则全部 skip 且退出码 0）：
+
+   ```bash
+   cd frontend
+   E2E_BASE_URL=http://127.0.0.1:5173 npm run test:e2e
+   ```
+
+5. **可选环境变量**：
+   - **`E2E_CHAT_STREAM=1`**：启用流式对话用例（依赖 LLM / SSE，易超时）。
+   - **`E2E_MULTIPART=1`**：启用约 6MB 分片上传用例（较慢）。
+
+6. **调试 UI**：`E2E_BASE_URL=http://127.0.0.1:5173 npm run test:e2e:ui`。
+
+## 工作空间文件 API（与后端契约）
+
+- **列表**：`GET /api/workspace`（`folder`、`type` 查询参数）。
+- **列表增量 / 处理中状态**：`GET /api/workspace/events`（`text/event-stream`）；前端在存在 `processed === 0` 时优先订阅，失败则回退静默轮询同一路径的 GET 列表。
+- **上传、分片完成、重命名、标签、下载等**：仍为 `/api/files/...`（根路径 `GET /api/files` 已移除，勿再依赖）。
+
+实现见 `src/api/files.ts`、`src/hooks/useFiles.ts`。
 
 ## 环境变量
 
@@ -58,6 +92,16 @@ Windows CMD 可先执行：`set VITE_API_BASE=https://ai-task-assistant.78574837
 
 打开线上站点 → **Network**，API 请求应是 `https://…workers.dev/api/...`。若仍是 `127.0.0.1:8787`，说明**本次 `npm run build` 时**仍未带上正确的 `VITE_API_BASE`（例如只用了空的 `.env`）。  
 登录页 toast 里的 `127.0.0.1:8787` 是**固定提示文案**，以 Network 里的 **Request URL** 为准。
+
+### Vercel（任务 7.3）
+
+- 在 Vercel 项目中将 **Root Directory** 设为 **`frontend`**，**Build Command** `npm run build`，**Output** `dist`。
+- 在 **Environment Variables** 中为 **Production** 设置 **`VITE_API_BASE`**（同上，无尾部斜杠）。
+- 后端 **CORS** 须允许 Vercel 站点来源（与 Cloudflare Worker 配置方式一致，见技术方案 §12）。
+
+### 构建验收（任务 7.3）
+
+在 **`frontend/`** 下执行 **`npm run build`**（读取 `vite.config.ts`、环境变量与 `tsconfig`）应无类型错误且产出 **`dist/`**。发布前用 **`npm run preview`** 本地抽查静态资源与路由。更细的 **`VITE_API_BASE`** 与自检步骤见 **[`docs/testing/frontend_e2e_and_build.md`](../docs/testing/frontend_e2e_and_build.md) §10**。
 
 ## 路径别名
 

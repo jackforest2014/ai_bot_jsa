@@ -1,4 +1,5 @@
 import type { FileRepository, FileUploadRow } from '../db';
+import type { Env } from '../env';
 import type { FileStorage } from '../storage/file-storage';
 import { presignR2UploadPartUrl } from '../storage/r2-presign';
 import { FileSizeError, ValidationError } from '../errors/app-errors';
@@ -126,7 +127,7 @@ export class FileService {
     folderPath?: string;
     tags?: string[] | null;
     waitUntil?: (p: Promise<unknown>) => void;
-    d1: D1Database;
+    env: Env;
   }): Promise<FileUploadRow> {
     const size = opts.data.byteLength;
     this.assertSizeWithinLimit(size);
@@ -162,7 +163,7 @@ export class FileService {
     if (!row) {
       throw new Error('file row missing after insert');
     }
-    scheduleFileIngest(opts.waitUntil, opts.d1, id, opts.userId);
+    scheduleFileIngest(opts.waitUntil, opts.env, id, opts.userId);
     return row;
   }
 
@@ -216,7 +217,7 @@ export class FileService {
   async completeMultipart(
     userId: string,
     input: CompleteMultipartInput,
-    opts: { waitUntil?: (p: Promise<unknown>) => void; d1: D1Database },
+    opts: { waitUntil?: (p: Promise<unknown>) => void; env: Env },
   ): Promise<FileUploadRow> {
     assertUserR2Key(userId, input.r2_key);
     this.assertSizeWithinLimit(input.size);
@@ -258,19 +259,19 @@ export class FileService {
     if (!row) {
       throw new Error('file row missing after complete');
     }
-    scheduleFileIngest(opts.waitUntil, opts.d1, id, userId);
+    scheduleFileIngest(opts.waitUntil, opts.env, id, userId);
     return row;
   }
 
   async resetProcessingAndSchedule(
     userId: string,
     fileId: string,
-    opts: { waitUntil?: (p: Promise<unknown>) => void; d1: D1Database },
+    opts: { waitUntil?: (p: Promise<unknown>) => void; env: Env },
   ): Promise<FileUploadRow | undefined> {
     const row = await this.files.findByIdForUser(fileId, userId);
     if (!row) return undefined;
-    await this.files.updateForUser(fileId, userId, { processed: 0 });
-    scheduleFileIngest(opts.waitUntil, opts.d1, fileId, userId);
+    await this.files.updateForUser(fileId, userId, { processed: 0, process_error: null });
+    scheduleFileIngest(opts.waitUntil, opts.env, fileId, userId);
     return this.files.findByIdForUser(fileId, userId);
   }
 
@@ -448,6 +449,7 @@ export function summarizeFileRow(row: FileUploadRow): Record<string, unknown> {
     size: row.size,
     mime_type: row.mime_type,
     processed: row.processed,
+    process_error: row.process_error?.trim() ? row.process_error.trim() : null,
     created_at: row.created_at,
   };
 }

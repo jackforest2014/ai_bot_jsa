@@ -48,6 +48,15 @@ export function apiUrl(path: string): string {
   return `${API_BASE}${p}`
 }
 
+/** 与 `request()` 一致的 Bearer，供 SSE 等非 JSON fetch 使用 */
+export function authHeaders(): Headers {
+  const headers = new Headers()
+  const token =
+    useUserStore.getState().token?.trim() || localStorage.getItem(TOKEN_STORAGE_KEY)?.trim()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  return headers
+}
+
 export async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = apiUrl(endpoint.startsWith('/') ? endpoint : `/${endpoint}`)
 

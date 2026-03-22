@@ -1,12 +1,13 @@
 import type { LLMMessage, LLMProvider } from '../llm/types';
 import { encodeSseEvent } from './sse';
 import type { UserRow } from '../db';
-import type { ConversationRepository } from '../db';
+import type { ConversationRepository, SessionRepository } from '../db';
 import type { IntentClassifier } from '../intent';
 import type { MemoryService } from '../memory/memory-service';
 import { PromptService } from '../prompt';
 import { ToolRegistry } from '../tools/tool-registry';
 import { logger } from '../lib/logger';
+import { recordMetric } from '../observability/metrics';
 
 const MAX_REACT_ITERATIONS = 10;
 const SHORT_TERM_MESSAGE_CAP = 20;
@@ -34,7 +35,33 @@ function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Pro
 export type ChatStreamParams = {
   user: UserRow;
   userInput: string;
+  /** 当前会话（须已通过归属校验） */
+  sessionId: string;
+  sessionTitleSource: 'auto' | 'user';
+  waitUntil?: (p: Promise<unknown>) => void;
 };
+
+async function suggestSessionTitle(llm: LLMProvider, userSentence: string): Promise<string> {
+  const trimmed = userSentence.trim();
+  if (trimmed.length <= 36) return trimmed || '新对话';
+  try {
+    const r = await llm.chat(
+      [
+        {
+          role: 'system',
+          content:
+            '你是标题生成器。用不超过18个汉字概括用户首条问题，不要引号、不要标点结尾，只输出标题本身。',
+        },
+        { role: 'user', content: trimmed.slice(0, 500) },
+      ],
+      undefined,
+    );
+    const t = (r.content ?? '').trim().replace(/^[\s"'「」]+|[\s"'。]+$/g, '');
+    return t.slice(0, 36) || trimmed.slice(0, 24);
+  } catch {
+    return trimmed.slice(0, 30);
+  }
+}
 
 export function extractKeywords(_userInput: string): string[] {
   return [];
@@ -46,6 +73,7 @@ export class ChatService {
     private readonly promptService: PromptService,
     private readonly intentClassifier: IntentClassifier,
     private readonly conversationRepo: ConversationRepository,
+    private readonly sessionRepo: SessionRepository,
     private readonly toolRegistry: ToolRegistry,
     private readonly memoryService: MemoryService | null,
   ) {}
@@ -54,7 +82,7 @@ export class ChatService {
    * 返回 UTF-8 字节流：SSE 事件序列（status / token 随 Gemini 流式增量 / tool_call / citation / intention / done）。
    */
   handleMessageStream(params: ChatStreamParams): ReadableStream<Uint8Array> {
-    const { user, userInput } = params;
+    const { user, userInput, sessionId, sessionTitleSource, waitUntil } = params;
     const encoder = new TextEncoder();
 
     return new ReadableStream({
@@ -75,9 +103,19 @@ export class ChatService {
 
         send('status', { phase: 'connected' });
         dbg('sse_open');
+        recordMetric('chat_stream_started', { user_id: user.id, session_id: sessionId });
 
         void (async () => {
         try {
+          const countsBefore = await this.conversationRepo.countRolesInSession(sessionId);
+          const hasAssistantBefore = await this.conversationRepo.hasAssistantInSession(sessionId);
+          const isFirstAssistantTurn = !hasAssistantBefore;
+          dbg('session_state', {
+            users: countsBefore.users,
+            assistants: countsBefore.assistants,
+            isFirstAssistantTurn,
+          });
+
           const intention = await this.intentClassifier.classify(userInput);
           dbg('intent_done', { intention });
           send('intention', { intention });
@@ -85,13 +123,19 @@ export class ChatService {
           const template = await this.promptService.selectTemplate(intention);
           dbg('template_selected', { templateId: template.id, templateName: template.name });
           const tools = this.toolRegistry.getDefinitions();
-          const systemPrompt = this.promptService.render(template.template_text, {
+          let systemPrompt = this.promptService.render(template.template_text, {
             userName: user.name,
-            userEmail: user.email,
+            userEmail: user.email ?? '',
             aiNickname: user.ai_nickname,
             tools,
             preferencesJson: user.preferences_json,
           });
+          if (isFirstAssistantTurn) {
+            const gaps: string[] = [];
+            if (!user.email?.trim()) gaps.push('邮箱');
+            gaps.push('希望被如何称呼（若与当前显示名不同）');
+            systemPrompt += `\n\n【首轮资料引导】当前可能缺失或可确认项：${gaps.join('、')}。请在本回复中同时回应用户的实质需求；若用户尚未提供上列信息，用一两句自然话询问；若用户已在本条消息中说明，则不要重复追问。\n`;
+          }
           dbg('system_prompt_built', { toolCount: tools.length, systemChars: systemPrompt.length });
 
           let ragBlock = '';
@@ -135,11 +179,11 @@ export class ChatService {
             dbg('rag_skip', { reason: 'memory_service_null' });
           }
 
-          const historyRows = await this.conversationRepo.listRecentForUser(
-            user.id,
+          const historyRows = await this.conversationRepo.listRecentForSession(
+            sessionId,
             SHORT_TERM_MESSAGE_CAP,
           );
-          dbg('history_loaded', { rows: historyRows.length });
+          dbg('history_loaded', { rows: historyRows.length, sessionId });
           const historyMessages: LLMMessage[] = [];
           for (const row of historyRows) {
             if (row.role !== 'user' && row.role !== 'assistant') continue;
@@ -172,9 +216,18 @@ export class ChatService {
             const response = await this.llm.chatStream(messages, defs, (delta) => {
               if (delta) send('token', { content: delta });
             });
+            const llmMs = Date.now() - llmT;
+            recordMetric('llm_chat_stream', {
+              user_id: user.id,
+              session_id: sessionId,
+              round,
+              duration_ms: llmMs,
+              tool_calls: response.tool_calls?.length ?? 0,
+              text_chars: (response.content ?? '').length,
+            });
             dbg('llm_stream_done', {
               round,
-              llmMs: Date.now() - llmT,
+              llmMs,
               textChars: (response.content ?? '').length,
               toolCallCount: response.tool_calls?.length ?? 0,
             });
@@ -235,33 +288,65 @@ export class ChatService {
 
           const keywords = extractKeywords(userInput);
           const kwJson = JSON.stringify(keywords);
-          const now = Math.floor(Date.now() / 1000);
+          const wallSec = Math.floor(Date.now() / 1000);
+          const maxAt = await this.conversationRepo.maxCreatedAtForSession(sessionId);
+          const userAt = Math.max(wallSec, (maxAt ?? 0) + 1);
+          const assistantAt = userAt + 1;
           const userMsgId = crypto.randomUUID();
           const assistantMsgId = crypto.randomUUID();
 
           await this.conversationRepo.insert({
             id: userMsgId,
             user_id: user.id,
+            session_id: sessionId,
             role: 'user',
             content: userInput,
             intention,
             prompt_id: null,
             keywords: kwJson,
             conversation_id: null,
-            created_at: now,
+            created_at: userAt,
           });
 
           await this.conversationRepo.insert({
             id: assistantMsgId,
             user_id: user.id,
+            session_id: sessionId,
             role: 'assistant',
             content: finalText,
             intention,
             prompt_id: template.id,
             keywords: kwJson,
             conversation_id: userMsgId,
-            created_at: now,
+            created_at: assistantAt,
           });
+
+          await this.sessionRepo.touchUpdatedAt(sessionId, user.id);
+
+          const firstPairInSession =
+            countsBefore.users === 0 && countsBefore.assistants === 0 && sessionTitleSource === 'auto';
+          if (firstPairInSession) {
+            const runTitle = async () => {
+              try {
+                const title = await suggestSessionTitle(this.llm, userInput);
+                await this.sessionRepo.updateTitleIfStillAuto(sessionId, user.id, title);
+              } catch (err) {
+                logger.warn('auto session title failed', {
+                  sessionId,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              }
+            };
+            if (waitUntil) {
+              try {
+                waitUntil(runTitle());
+              } catch {
+                void runTitle();
+              }
+            } else {
+              void runTitle();
+            }
+          }
 
           dbg('persist_done', { totalMs: Date.now() - t0 });
           send('done', {});
@@ -276,6 +361,11 @@ export class ChatService {
           send('token', { content: msg });
           send('done', {});
         } finally {
+          recordMetric('chat_stream_finished', {
+            user_id: user.id,
+            session_id: sessionId,
+            total_ms: Date.now() - t0,
+          });
           controller.close();
         }
         })();

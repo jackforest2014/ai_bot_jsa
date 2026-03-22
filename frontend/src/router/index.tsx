@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import RequireAuth from '@/components/auth/RequireAuth'
 import AppShell from '@/components/layout/AppShell'
 
+/** 阶段六 6.5：主业务页按需分割，减轻首屏 JS */
 const ChatPage = lazy(() => import('@/pages/Chat/index'))
 const FileWorkspace = lazy(() => import('@/pages/Files/FileWorkspace'))
 const SettingsPage = lazy(() => import('@/pages/Settings/index'))
@@ -21,7 +22,8 @@ export default function AppRouter() {
         <Route element={<RequireAuth />}>
           <Route path="/" element={<AppShell />}>
             <Route index element={<ChatPage />} />
-            <Route path="files" element={<FileWorkspace />} />
+            <Route path="workspace" element={<FileWorkspace />} />
+            <Route path="files" element={<Navigate to="/workspace" replace />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Route>

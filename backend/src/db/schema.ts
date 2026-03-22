@@ -1,13 +1,24 @@
 import { integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-/** 与 migrations 0001 + 0007  applied 后的 users 表一致 */
+/** 与迁移 0009 后一致：name 唯一、email 可空 */
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  email: text('email').notNull().unique(),
+  name: text('name').notNull().unique(),
+  email: text('email').unique(),
   ai_nickname: text('ai_nickname').notNull().default('助手'),
   created_at: integer('created_at').notNull(),
   preferences_json: text('preferences_json'),
+});
+
+export const chatSessions = sqliteTable('chat_sessions', {
+  id: text('id').primaryKey(),
+  user_id: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  title_source: text('title_source').notNull().default('auto'),
+  created_at: integer('created_at').notNull(),
+  updated_at: integer('updated_at').notNull(),
 });
 
 export const projects = sqliteTable('projects', {
@@ -46,6 +57,9 @@ export const conversations = sqliteTable('conversations', {
   user_id: text('user_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
+  session_id: text('session_id')
+    .notNull()
+    .references(() => chatSessions.id, { onDelete: 'cascade' }),
   role: text('role').notNull(),
   content: text('content').notNull(),
   intention: text('intention'),
@@ -70,6 +84,8 @@ export const fileUploads = sqliteTable('file_uploads', {
   folder_path: text('folder_path').notNull().default(''),
   tags: text('tags'),
   processed: integer('processed').notNull().default(0),
+  /** 索引失败时的简短说明（成功或非失败态应为空） */
+  process_error: text('process_error'),
   created_at: integer('created_at').notNull(),
 });
 

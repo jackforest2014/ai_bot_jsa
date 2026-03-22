@@ -1,0 +1,37 @@
+# 复制为 wrangler.production.toml 后填写 database_id 等（该文件已 gitignore，勿提交）
+# 说明见 ../docs/deployment/backend-production.md
+
+name = "ai-task-assistant-production"
+main = "src/index.ts"
+compatibility_date = "2025-03-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "task_assistant_db"
+database_name = "task-assistant-db-production"
+# 执行: npx wrangler d1 create task-assistant-db-production 后填入下方 UUID
+database_id = "00000000-0000-4000-8000-000000000001"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "task-assistant-files-production"
+
+# 自定义域名（可选）：取消注释并改为你的域与 Zone（与 Dashboard Workers 路由一致即可）
+# routes = [
+#   { pattern = "api.example.com/*", zone_name = "example.com" },
+# ]
+
+[vars]
+LLM_PROVIDER = "qwen"
+LLM_MODEL = "qwen-plus"
+EMBEDDING_MODEL = "text-embedding-v3"
+SERPER_DAILY_SOFT_LIMIT = "80"
+R2_BUCKET_NAME = "task-assistant-files-production"
+# 预签名 URL 需要（Dashboard → 账户摘要右侧可抄 Account ID）
+# R2_ACCOUNT_ID = "你的 Cloudflare 账户 ID"
+QDRANT_URL = "https://你的集群地址.example.cloud.qdrant.io:6333"
+QDRANT_COLLECTION = "memory"
+EMBEDDING_DIMENSIONS = "768"
+# 生产切勿在此写 JWT_SECRET；使用: wrangler secret put JWT_SECRET --config wrangler.production.toml
+ENABLE_TOT_GOT_TOOLS = "false"
