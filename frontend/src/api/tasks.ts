@@ -28,6 +28,8 @@ export type TaskCreateBody = {
   detail_json?: string | null
   status?: string
   project_id?: string | null
+  starts_at?: number | null
+  ends_at?: number | null
 }
 
 export async function createTask(body: TaskCreateBody): Promise<Task> {
@@ -41,6 +43,8 @@ export type TaskUpdateBody = {
   project_id?: string | null
   detail?: unknown
   detail_json?: string | null
+  starts_at?: number | null
+  ends_at?: number | null
 }
 
 export async function updateTask(id: string, body: TaskUpdateBody): Promise<Task> {

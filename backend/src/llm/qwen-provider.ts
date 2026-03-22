@@ -1,11 +1,20 @@
 import { LLMError } from '../errors/app-errors';
 import { workerFetch } from '../lib/worker-fetch';
 import { splitSystemAndRest } from './gemini-messages';
-import type { LLMMessage, LLMProvider, LLMResponse, TokenUsage, ToolCall, ToolDefinition } from './types';
+import type {
+  ChatStreamOptions,
+  LLMMessage,
+  LLMProvider,
+  LLMResponse,
+  TokenUsage,
+  ToolCall,
+  ToolDefinition,
+} from './types';
 
 const QWEN_CHAT_TIMEOUT_MS = 90_000;
 const QWEN_EMBED_TIMEOUT_MS = 60_000;
-const QWEN_STREAM_WALL_MS = 180_000;
+/** 流式整段墙钟：长历史 + 多轮工具时 180s 易触发 AbortError，与前端长连接对齐略放宽 */
+const QWEN_STREAM_WALL_MS = 300_000;
 
 /** 中国大陆默认；国际站见 README / DASHSCOPE_BASE_URL */
 export const DEFAULT_DASHSCOPE_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
@@ -251,6 +260,7 @@ export class QwenProvider implements LLMProvider {
     messages: LLMMessage[],
     tools: ToolDefinition[] | undefined,
     onTextDelta: (chunk: string) => void,
+    options?: ChatStreamOptions,
   ): Promise<LLMResponse & { usage: TokenUsage }> {
     const url = `${this.opts.baseUrl.replace(/\/$/, '')}/chat/completions`;
     const openaiTools = toOpenAITools(tools);
@@ -261,7 +271,7 @@ export class QwenProvider implements LLMProvider {
     };
     if (openaiTools?.length) {
       body.tools = openaiTools;
-      body.tool_choice = 'auto';
+      body.tool_choice = options?.toolChoice === 'required' ? 'required' : 'auto';
     }
     const signal = deadlineSignal(QWEN_STREAM_WALL_MS);
     let res: Response;

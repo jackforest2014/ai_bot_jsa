@@ -64,8 +64,8 @@ export default function AppShell() {
       <Sidebar />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col md:overflow-hidden">
         <Header />
-        <main className="relative min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 before:pointer-events-none before:absolute before:inset-0 before:bg-[linear-gradient(rgba(15,23,42,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.06)_1px,transparent_1px)] before:bg-[length:28px_28px] before:opacity-80 dark:before:bg-[linear-gradient(rgba(34,211,238,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.035)_1px,transparent_1px)] dark:before:opacity-70">
-          <div className="relative z-10 mx-auto min-h-[min(100%,calc(100vh-5rem))] w-full max-w-[1800px] p-3 text-slate-800 sm:p-4 dark:mx-0 dark:max-w-none dark:p-3 dark:text-slate-200">
+        <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden p-3 sm:p-4 before:pointer-events-none before:absolute before:inset-0 before:bg-[linear-gradient(rgba(15,23,42,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.06)_1px,transparent_1px)] before:bg-[length:28px_28px] before:opacity-80 dark:before:bg-[linear-gradient(rgba(34,211,238,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.035)_1px,transparent_1px)] dark:before:opacity-70">
+          <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-[1800px] flex-1 flex-col text-slate-800 dark:mx-0 dark:max-w-none dark:text-slate-200">
             <Outlet />
           </div>
         </main>

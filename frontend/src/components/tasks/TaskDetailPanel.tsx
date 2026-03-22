@@ -12,6 +12,23 @@ function extractSubtasks(detail: unknown): unknown[] | null {
   return Array.isArray(st) ? st : null
 }
 
+const shanghaiTime: Intl.DateTimeFormatOptions = {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  weekday: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+}
+
+function formatTaskInstant(sec?: number | null): string | null {
+  if (sec == null) return null
+  return new Date(sec * 1000).toLocaleString('zh-CN', shanghaiTime)
+}
+
 export interface TaskDetailPanelProps {
   task: Task | null
 }
@@ -47,6 +64,23 @@ export default function TaskDetailPanel({ task }: TaskDetailPanelProps) {
           </button>
         ) : null}
       </div>
+      {task.starts_at != null || task.ends_at != null ? (
+        <div className="mb-2 space-y-0.5 text-xs text-slate-700 dark:text-slate-300">
+          {formatTaskInstant(task.starts_at) ? (
+            <p>
+              <span className="text-slate-500 dark:text-slate-500">开始 </span>
+              {formatTaskInstant(task.starts_at)}
+            </p>
+          ) : null}
+          {formatTaskInstant(task.ends_at) ? (
+            <p>
+              <span className="text-slate-500 dark:text-slate-500">结束 </span>
+              {formatTaskInstant(task.ends_at)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {task.description ? (
         <p className="mb-2 text-xs whitespace-pre-wrap text-slate-600 dark:text-slate-400">
           {task.description}

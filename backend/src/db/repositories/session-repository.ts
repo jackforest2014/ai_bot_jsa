@@ -1,5 +1,6 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
+import { clampSessionTitle } from '../../lib/session-title';
 import type { AppDb } from '../types';
 import { chatSessions } from '../schema';
 
@@ -56,7 +57,7 @@ export class SessionRepository {
     await this.db
       .update(chatSessions)
       .set({
-        title: title.trim().slice(0, 80),
+        title: clampSessionTitle(title),
         updated_at: Math.floor(Date.now() / 1000),
       })
       .where(

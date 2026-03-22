@@ -243,7 +243,7 @@ export default function FileWorkspace() {
   )
 
   return (
-    <div className="mx-auto max-w-full space-y-4 sm:space-y-6">
+    <div className="mx-auto max-w-full min-h-0 flex-1 space-y-4 overflow-y-auto pr-1 sm:space-y-6">
       <div>
         <h2 className="bg-gradient-to-r from-emerald-800 via-slate-800 to-slate-600 bg-clip-text text-lg font-semibold text-transparent dark:from-emerald-200 dark:via-slate-100 dark:to-slate-300 sm:text-xl">
           工作空间

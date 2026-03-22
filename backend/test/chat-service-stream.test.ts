@@ -29,6 +29,7 @@ describe('ChatService.handleMessageStream', () => {
       countRolesInSession: vi.fn(async () => ({ users: 0, assistants: 0 })),
       hasAssistantInSession: vi.fn(async () => false),
       listRecentForSession: vi.fn(async () => []),
+      maxCreatedAtForSession: vi.fn(async () => null),
       insert: vi.fn(async () => {}),
     } as unknown as ConversationRepository;
 

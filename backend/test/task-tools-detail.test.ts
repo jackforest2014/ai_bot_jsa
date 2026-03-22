@@ -18,6 +18,8 @@ describe('task tools detail_json', () => {
         description: null,
         detail_json: inserted[0]?.detail_json ?? null,
         status: 'pending',
+        starts_at: null,
+        ends_at: null,
         created_at: 0,
         updated_at: 0,
       })),

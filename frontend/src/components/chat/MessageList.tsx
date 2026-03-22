@@ -8,8 +8,10 @@ export interface MessageListProps {
   /** 无消息时的占位 */
   emptyHint?: ReactNode
   className?: string
-  /** 助手失败气泡上的「重试」：重试该条用户消息（任务 3.6） */
+  /** 重试该条用户消息对应的助手回复：清空当前助手气泡并重新流式生成（任务 3.6 / 气泡旁重试） */
   onRetryAfterUser?: (userMessageId: string) => void
+  /** 为 true 时禁用用户气泡旁的「重新生成」（如正在流式或加载历史） */
+  regenerateAssistantDisabled?: boolean
 }
 
 /**
@@ -20,6 +22,7 @@ export default function MessageList({
   emptyHint,
   className,
   onRetryAfterUser,
+  regenerateAssistantDisabled = false,
 }: MessageListProps) {
   const nodes = useMemo(() => {
     return messages.map((m, i) => {
@@ -34,9 +37,21 @@ export default function MessageList({
         }
         if (userId) onRetry = () => onRetryAfterUser(userId)
       }
-      return <Message key={m.id} message={m} onRetry={onRetry} />
+      let onRegenerateReply: (() => void) | undefined
+      if (m.role === 'user' && onRetryAfterUser && messages[i + 1]?.role === 'assistant') {
+        onRegenerateReply = () => onRetryAfterUser(m.id)
+      }
+      return (
+        <Message
+          key={m.id}
+          message={m}
+          onRetry={onRetry}
+          onRegenerateReply={onRegenerateReply}
+          regenerateAssistantDisabled={regenerateAssistantDisabled}
+        />
+      )
     })
-  }, [messages, onRetryAfterUser])
+  }, [messages, onRetryAfterUser, regenerateAssistantDisabled])
 
   if (messages.length === 0) {
     return emptyHint ? <div className={className}>{emptyHint}</div> : null

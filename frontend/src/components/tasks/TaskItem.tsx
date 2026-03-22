@@ -1,3 +1,4 @@
+import { formatTaskListStart, taskListCoreSnippet } from '@/lib/task-display'
 import type { Task } from '@/types/task'
 
 export interface TaskItemProps {
@@ -21,6 +22,8 @@ export default function TaskItem({
 }: TaskItemProps) {
   const status = task.status ?? 'pending'
   const done = status === 'done'
+  const start = formatTaskListStart(task)
+  const core = taskListCoreSnippet(task, 50)
 
   return (
     <div
@@ -42,7 +45,21 @@ export default function TaskItem({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="font-medium text-slate-800 line-clamp-2 dark:text-slate-100">{task.title}</div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+          <div
+            className="mt-1 text-[11px] tabular-nums text-slate-500 dark:text-slate-400"
+            title={start.title || undefined}
+          >
+            起始 {start.text}
+          </div>
+          {core ? (
+            <p
+              className="mt-0.5 line-clamp-2 break-all text-[11px] leading-snug text-slate-600 dark:text-slate-400"
+              title={core}
+            >
+              {core}
+            </p>
+          ) : null}
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <span
               className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
                 done

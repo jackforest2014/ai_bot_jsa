@@ -28,6 +28,7 @@ export default function ChatPage() {
     error,
     streamStatusHint,
     historyLoading,
+    tasksRefreshTick,
   } = useChatStream()
   const [draft, setDraft] = useState('')
 
@@ -44,7 +45,7 @@ export default function ChatPage() {
   const chatBlocked = inputDisabled || historyLoading
 
   return (
-    <div className="space-y-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
       {showSyncing ? (
         <p className="text-sm text-slate-600 dark:text-slate-400">正在同步用户信息…</p>
       ) : null}
@@ -75,9 +76,9 @@ export default function ChatPage() {
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-stretch">
-        <div className="flex min-w-0 flex-1 justify-center">
-          <div className="flex w-full max-w-3xl flex-col gap-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden lg:flex-row lg:items-stretch">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-3">
             <header className="flex flex-col gap-1 px-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
               <h2
                 className="truncate bg-gradient-to-r from-cyan-700 via-slate-800 to-slate-600 bg-clip-text text-lg font-semibold text-transparent dark:from-cyan-200 dark:via-slate-100 dark:to-slate-300"
@@ -98,11 +99,12 @@ export default function ChatPage() {
               <p className="text-sm text-slate-600 dark:text-slate-400">正在加载本会话…</p>
             ) : null}
 
-            <div className="min-h-[40vh] flex-1 overflow-y-auto rounded-xl border border-cyan-500/30 bg-white/90 p-3 shadow-sm backdrop-blur-sm sm:p-4 dark:border-cyan-500/20 dark:bg-slate-950/55 dark:shadow-[inset_0_1px_0_rgba(34,211,238,0.06),0_12px_40px_rgba(0,0,0,0.35)]">
+            <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-cyan-500/30 bg-white/90 p-3 shadow-sm backdrop-blur-sm sm:p-4 dark:border-cyan-500/20 dark:bg-slate-950/55 dark:shadow-[inset_0_1px_0_rgba(34,211,238,0.06),0_12px_40px_rgba(0,0,0,0.35)]">
               <MessageList
                 messages={messages}
                 className="min-h-0"
                 onRetryAfterUser={retryAfterUserMessage}
+                regenerateAssistantDisabled={streaming || historyLoading}
                 emptyHint={
                   <p className="text-sm text-slate-500 dark:text-slate-500">
                     {historyLoading ? '…' : '发送消息开始对话；会话与历史在左侧列表切换。'}
@@ -134,9 +136,10 @@ export default function ChatPage() {
           </div>
         </div>
 
-        <div className="w-full shrink-0 lg:w-72">
+        <div className="flex max-h-[min(48vh,440px)] min-h-[200px] w-full shrink-0 flex-col overflow-hidden lg:max-h-none lg:h-full lg:min-h-0 lg:w-72">
           <TaskSidebar
             disabled={inputDisabled}
+            tasksRefreshTick={tasksRefreshTick}
             onInsertSnippet={(snippet) =>
               setDraft((d) => (d.trim() ? `${d}\n${snippet}` : snippet))
             }

@@ -26,4 +26,8 @@ export {
   type NewChatSessionRow,
 } from './session-repository';
 export { TaskRepository, type NewTaskRow, type TaskRow } from './task-repository';
+export {
+  ToolInvocationRepository,
+  type NewToolInvocationRow,
+} from './tool-invocation-repository';
 export { UserRepository, type NewUserRow, type UserRow } from './user-repository';

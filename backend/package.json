@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "dev:log": "node scripts/wrangler-dev-with-log.mjs",
     "deploy": "wrangler deploy",
     "deploy:production": "bash scripts/deploy-production.sh",
     "db:apply:production": "wrangler d1 migrations apply task-assistant-db-production --remote --config wrangler.production.toml",

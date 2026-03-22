@@ -2,6 +2,7 @@
 
 export type SseEventName =
   | 'token'
+  | 'assistant_content'
   | 'tool_call'
   | 'tool_result_meta'
   | 'citation'

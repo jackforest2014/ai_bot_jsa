@@ -93,7 +93,7 @@ export default function SettingsPage() {
   const showSyncing = Boolean(token && profileLoading && !user)
 
   return (
-    <div className="space-y-6">
+    <div className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1">
       <h2 className="bg-gradient-to-r from-cyan-700 to-slate-700 bg-clip-text text-xl font-semibold text-transparent dark:from-cyan-200 dark:to-slate-200">
         设置
       </h2>

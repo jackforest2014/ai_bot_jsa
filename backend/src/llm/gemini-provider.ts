@@ -5,7 +5,15 @@ import {
   toGeminiContents,
   toGeminiToolDeclarations,
 } from './gemini-messages';
-import type { LLMMessage, LLMProvider, LLMResponse, TokenUsage, ToolCall, ToolDefinition } from './types';
+import type {
+  ChatStreamOptions,
+  LLMMessage,
+  LLMProvider,
+  LLMResponse,
+  TokenUsage,
+  ToolCall,
+  ToolDefinition,
+} from './types';
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -13,8 +21,8 @@ const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const GEMINI_CHAT_TIMEOUT_MS = 90_000;
 /** embedContent 等待上限（RAG 第一步） */
 const GEMINI_EMBED_TIMEOUT_MS = 60_000;
-/** 流式：从发起请求到读完响应体的总墙钟上限（含首包与尾包） */
-const GEMINI_STREAM_WALL_MS = 180_000;
+/** 流式：从发起请求到读完响应体的总墙钟上限（含首包与尾包）；长上下文单轮可能 >3min */
+const GEMINI_STREAM_WALL_MS = 300_000;
 
 function deadlineSignal(ms: number): AbortSignal | undefined {
   if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
@@ -92,8 +100,9 @@ export class GeminiProvider implements LLMProvider {
     messages: LLMMessage[],
     tools: ToolDefinition[] | undefined,
     onTextDelta: (chunk: string) => void,
+    options?: ChatStreamOptions,
   ): Promise<LLMResponse & { usage: TokenUsage }> {
-    const body = this.buildGenerateBody(messages, tools);
+    const body = this.buildGenerateBody(messages, tools, options);
     const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(this.opts.chatModel)}:streamGenerateContent?key=${encodeURIComponent(this.opts.apiKey)}&alt=sse`;
     const signal = deadlineSignal(GEMINI_STREAM_WALL_MS);
     let res: Response;
@@ -260,7 +269,11 @@ export class GeminiProvider implements LLMProvider {
     return values;
   }
 
-  private buildGenerateBody(messages: LLMMessage[], tools?: ToolDefinition[]): Record<string, unknown> {
+  private buildGenerateBody(
+    messages: LLMMessage[],
+    tools?: ToolDefinition[],
+    streamOptions?: ChatStreamOptions,
+  ): Record<string, unknown> {
     const { systemText, rest } = splitSystemAndRest(messages);
     const contents = toGeminiContents(rest);
     if (!contents.length) {
@@ -275,8 +288,9 @@ export class GeminiProvider implements LLMProvider {
     }
     if (decls?.length) {
       body.tools = [{ functionDeclarations: decls }];
+      const mode = streamOptions?.toolChoice === 'required' ? 'ANY' : 'AUTO';
       body.toolConfig = {
-        functionCallingConfig: { mode: 'AUTO' },
+        functionCallingConfig: { mode },
       };
     }
     return body;

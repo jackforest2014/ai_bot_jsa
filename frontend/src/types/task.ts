@@ -8,6 +8,9 @@ export interface Task {
   detail?: unknown
   status?: string
   project_id?: string | null
+  /** Unix 秒，东八区墙钟语义 */
+  starts_at?: number | null
+  ends_at?: number | null
   created_at?: number
   updated_at?: number
 }

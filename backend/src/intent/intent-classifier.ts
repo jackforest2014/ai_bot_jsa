@@ -15,6 +15,7 @@ export const KNOWN_INTENTS = [
   'task_operation',
   'interview',
   'research',
+  'route_query',
   'file_upload',
   'workspace_operation',
 ] as const;
@@ -32,13 +33,13 @@ export type ResolvedIntent = KnownIntent | 'default';
  */
 const RULES: readonly { intent: KnownIntent; pattern: RegExp }[] = [
   {
-    intent: 'greeting',
-    pattern: /^\s*(你好|您好|hi|hello|嘿|早上好|下午好|晚上好|在吗|在么|哈喽|hey)/i,
-  },
-  {
     intent: 'task_operation',
     pattern:
-      /(创建|新建|添加|增加|修改|更新|编辑|删除|移除|完成|勾选|取消)任务|待办|任务列表|我的任务|task\b/i,
+      /(创建|新建|添加|增加|修改|更新|编辑|删除|移除|完成|勾选|取消)任务|待办|任务列表|我的任务|有哪些任务|当前任务|列出.*任务|task\b|(帮我)?(记一下|记下来|记得|提醒我)|列入.*待办|加进.*任务|还有什么任务|(明天|后天|大后天|下周|本周|这周|周[一二三四五六日天]).{0,50}(电话|致电|打给|拨打|拜访|见面|开会|会议|出差|去一趟)|(上午|下午|晚上|\d{1,2}\s*号).{0,55}(电话|致电|打给|拨打|拜访|见面|约见|开会|会议|出差|去一趟)|(电话|致电|拜访|见面|开会|会议|出差).{0,50}(明天|后天|下周|周[一二三四五六日天])/i,
+  },
+  {
+    intent: 'greeting',
+    pattern: /^\s*(你好|您好|hi|hello|嘿|早上好|下午好|晚上好|在吗|在么|哈喽|hey)/i,
   },
   {
     intent: 'interview',
@@ -47,6 +48,11 @@ const RULES: readonly { intent: KnownIntent; pattern: RegExp }[] = [
   {
     intent: 'research',
     pattern: /研究|深度研究|调研|综述|报告|论文|专利检索|学术|scholar|literature/i,
+  },
+  {
+    intent: 'route_query',
+    pattern:
+      /路线|导航|怎么去|怎么走|如何到|到.+怎么走|从.+到.+|乘.+去|开车去|驾车|步行去|骑行|骑车去|公交|地铁|打的|顺风车|路程|多远|多久到/i,
   },
   {
     intent: 'file_upload',

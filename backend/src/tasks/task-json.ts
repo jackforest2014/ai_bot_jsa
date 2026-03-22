@@ -1,6 +1,7 @@
 import type { TaskRow } from '../db';
+import { computeTaskScheduleZh } from './task-schedule-zh';
 
-/** REST 与工具列表统一：将 `detail_json` 解析为 `detail` */
+/** REST 与工具 `summarizeTask` 对齐：将 `detail_json` 解析为 `detail`，并附只读 `schedule_zh` */
 export function taskRowToApi(row: TaskRow): Record<string, unknown> {
   let detail: unknown;
   if (row.detail_json?.trim()) {
@@ -17,6 +18,9 @@ export function taskRowToApi(row: TaskRow): Record<string, unknown> {
     detail: detail ?? null,
     status: row.status,
     project_id: row.project_id ?? null,
+    starts_at: row.starts_at ?? null,
+    ends_at: row.ends_at ?? null,
+    schedule_zh: computeTaskScheduleZh(row),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

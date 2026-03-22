@@ -15,6 +15,9 @@ const emptyMeta = (): StreamMessageMeta => ({
   citations: [],
 })
 
+/** 后端 SSE：任务类工具完成后推 meta，用于刷新右侧任务列表 */
+const TASK_TOOL_SSE = new Set(['add_task', 'list_tasks', 'update_task', 'delete_task'])
+
 function intentionToChatStatus(intention: string): ChatStatus {
   const i = intention.toLowerCase()
   if (i.includes('research')) return 'researching'
@@ -66,6 +69,8 @@ export interface UseChatStreamResult {
   streamStatusHint: string | null
   /** 切换会话拉取历史期间为 true，避免未完成加载时发送导致状态被覆盖（任务 4.5） */
   historyLoading: boolean
+  /** 任务类工具 SSE 每次完成递增，供任务侧栏静默刷新 */
+  tasksRefreshTick: number
 }
 
 /**
@@ -79,6 +84,7 @@ export function useChatStream(): UseChatStreamResult {
   const [error, setError] = useState<string | null>(null)
   const [streamStatusHint, setStreamStatusHint] = useState<string | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [tasksRefreshTick, setTasksRefreshTick] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
   const assistantIdRef = useRef<string | null>(null)
   const messagesRef = useRef<ChatMessage[]>([])
@@ -175,6 +181,8 @@ export function useChatStream(): UseChatStreamResult {
           ...m,
           toolResultMetas: [...m.toolResultMetas, data],
         }))
+        const tn = typeof data.tool === 'string' ? data.tool : ''
+        if (TASK_TOOL_SSE.has(tn)) setTasksRefreshTick((x) => x + 1)
         return
       }
 
@@ -201,6 +209,20 @@ export function useChatStream(): UseChatStreamResult {
           )
           const cur = useUiStore.getState().chatStatus
           if (cur !== 'searching' && cur !== 'researching') setChatStatus('thinking')
+        }
+        return
+      }
+
+      /** 联网找图白名单清洗后的全文替换（避免流式阶段已生成背诵图链） */
+      if (ev.event === 'assistant_content') {
+        const raw = ev.data
+        const content =
+          raw && typeof raw === 'object' && raw !== null && 'content' in raw
+            ? String((raw as { content: unknown }).content ?? '')
+            : ''
+        const aid = assistantIdRef.current
+        if (aid) {
+          setMessages((prev) => prev.map((m) => (m.id === aid ? { ...m, content } : m)))
         }
         return
       }
@@ -349,5 +371,6 @@ export function useChatStream(): UseChatStreamResult {
     error,
     streamStatusHint,
     historyLoading,
+    tasksRefreshTick,
   }
 }

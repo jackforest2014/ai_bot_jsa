@@ -4,9 +4,11 @@ import rehypeHighlight from 'rehype-highlight'
 import remarkGfm from 'remark-gfm'
 import 'highlight.js/styles/night-owl.css'
 
+import MessageCopyBar from '@/components/chat/MessageCopyBar'
 import RagCitation from '@/components/chat/RagCitation'
 import ToolCallMark from '@/components/chat/ToolCallMark'
-import type { ChatMessage, StreamMessageMeta } from '@/types/chat'
+import type { ChatMessage } from '@/types/chat'
+import { collectBackendNotices } from '@/lib/message-copy-format'
 import { resolveCitation, resolveToolMeta, splitMessageSegments } from '@/lib/chat-message-segments'
 
 /** API 为 Unix 秒；流式本地消息为 `Date.now()` 毫秒 */
@@ -237,20 +239,6 @@ function renderAssistantSegments(content: string, streamMeta: ChatMessage['strea
   })
 }
 
-/** Serper 软限、降级等后端文案，在气泡内原样展示（任务 3.6 / §6.2.5） */
-function collectBackendNotices(streamMeta?: StreamMessageMeta): string[] {
-  const metas = streamMeta?.toolResultMetas
-  if (!metas?.length) return []
-  const raw: string[] = []
-  for (const m of metas) {
-    if (!m || typeof m !== 'object') continue
-    if (typeof m.notice === 'string' && m.notice.trim()) raw.push(m.notice.trim())
-    if (typeof m.quota_warning === 'string' && m.quota_warning.trim())
-      raw.push(m.quota_warning.trim())
-  }
-  return [...new Set(raw)]
-}
-
 function renderUserBody(content: string) {
   const segments = splitMessageSegments(content)
 
@@ -273,14 +261,44 @@ function renderUserBody(content: string) {
   })
 }
 
+function RegenerateIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+      <path d="M3 21v-5h5" />
+    </svg>
+  )
+}
+
 export interface MessageProps {
   message: ChatMessage
   /** 助手消息流式失败时，重试其对应上一条用户问题（任务 3.6） */
   onRetry?: () => void
+  /** 下一条为助手时：清空该助手回复并重新请求（与气泡内失败重试同源） */
+  onRegenerateReply?: () => void
+  regenerateAssistantDisabled?: boolean
 }
 
 /** 用户 / AI 气泡、Markdown + 代码高亮与复制；`<rag>` / `<tool>` 与 SSE 元数据对齐；Serper 提示与重试（任务 3.2 / 3.6） */
-export default function Message({ message, onRetry }: MessageProps) {
+export default function Message({
+  message,
+  onRetry,
+  onRegenerateReply,
+  regenerateAssistantDisabled = false,
+}: MessageProps) {
   const isUser = message.role === 'user'
   const bubble = isUser
     ? 'max-w-[min(92%,42rem)] rounded-xl border-2 border-cyan-400/50 bg-gradient-to-br from-cyan-900 to-teal-950 px-3 py-2 text-sm text-white shadow-[0_4px_24px_rgba(34,211,238,0.22)]'
@@ -347,14 +365,35 @@ export default function Message({ message, onRetry }: MessageProps) {
       <article className={bubble} aria-label={isUser ? '用户消息' : '助手消息'}>
         <div className="space-y-1">{body}</div>
       </article>
-      {timeParts ? (
-        <time
-          className={`max-w-[min(92%,42rem)] px-0.5 ${timeClass}`}
-          dateTime={timeParts.iso}
-        >
-          {timeParts.label}
-        </time>
-      ) : null}
+      <div
+        className={`flex max-w-[min(92%,42rem)] items-center gap-1.5 px-0.5 ${isUser ? 'justify-end' : 'justify-start'}`}
+      >
+        {!isUser ? (
+          <MessageCopyBar message={message} menuAlign="left" mutedClass={timeClass} />
+        ) : null}
+        {timeParts ? (
+          <time className={`shrink-0 tabular-nums ${timeClass}`} dateTime={timeParts.iso}>
+            {timeParts.label}
+          </time>
+        ) : null}
+        {isUser ? (
+          <div className={`inline-flex shrink-0 items-center gap-0.5 ${timeClass}`}>
+            <MessageCopyBar message={message} menuAlign="right" mutedClass="" />
+            {onRegenerateReply ? (
+              <button
+                type="button"
+                title="重新生成回复"
+                aria-label="重新生成下一条 AI 回复"
+                disabled={regenerateAssistantDisabled}
+                onClick={onRegenerateReply}
+                className="rounded p-0.5 text-current opacity-70 hover:bg-white/15 hover:opacity-100 disabled:pointer-events-none disabled:opacity-35"
+              >
+                <RegenerateIcon />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

@@ -43,7 +43,14 @@ export class TaskRepository {
     patch: Partial<
       Pick<
         TaskRow,
-        'title' | 'description' | 'detail_json' | 'status' | 'project_id' | 'updated_at'
+        | 'title'
+        | 'description'
+        | 'detail_json'
+        | 'status'
+        | 'project_id'
+        | 'starts_at'
+        | 'ends_at'
+        | 'updated_at'
       >
     >,
   ): Promise<boolean> {

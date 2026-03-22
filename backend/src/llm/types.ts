@@ -33,6 +33,11 @@ export interface ToolDefinition {
   parameters: Record<string, unknown>;
 }
 
+/** 流式对话可选参数（OpenAI 兼容：`tool_choice`） */
+export type ChatStreamOptions = {
+  toolChoice?: 'auto' | 'required';
+};
+
 export interface LLMProvider {
   chat(
     messages: LLMMessage[],
@@ -45,6 +50,7 @@ export interface LLMProvider {
     messages: LLMMessage[],
     tools: ToolDefinition[] | undefined,
     onTextDelta: (chunk: string) => void,
+    options?: ChatStreamOptions,
   ): Promise<LLMResponse & { usage: TokenUsage }>;
   /** UTF-8 字节流，按模型返回顺序推送增量文本（不含 SSE 包装）；内部委托 `chatStream` */
   streamChat(

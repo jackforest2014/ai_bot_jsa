@@ -40,6 +40,9 @@ export const tasks = sqliteTable('tasks', {
   description: text('description'),
   detail_json: text('detail_json'),
   status: text('status').notNull().default('pending'),
+  /** Unix 秒；语义为 Asia/Shanghai 墙钟时刻的瞬时点 */
+  starts_at: integer('starts_at'),
+  ends_at: integer('ends_at'),
   created_at: integer('created_at').notNull(),
   updated_at: integer('updated_at').notNull(),
 });
@@ -98,3 +101,17 @@ export const serperUsage = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.user_id, t.day] })],
 );
+
+/** 每次工具执行一条，便于按时间区间统计（迁移 0012） */
+export const toolInvocations = sqliteTable('tool_invocations', {
+  id: text('id').primaryKey(),
+  user_id: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  session_id: text('session_id'),
+  tool_name: text('tool_name').notNull(),
+  ok: integer('ok').notNull(),
+  error_message: text('error_message'),
+  duration_ms: integer('duration_ms').notNull(),
+  created_at: integer('created_at').notNull(),
+});

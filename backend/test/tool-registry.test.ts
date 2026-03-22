@@ -1,5 +1,22 @@
-import { describe, it, expect } from 'vitest';
-import { ToolRegistry } from '../src/tools/tool-registry';
+import { describe, it, expect, vi } from 'vitest';
+import { inferToolInvocationOutcome, ToolRegistry } from '../src/tools/tool-registry';
+
+describe('inferToolInvocationOutcome', () => {
+  it('treats ok false as failure', () => {
+    const o = inferToolInvocationOutcome(JSON.stringify({ ok: false, error: 'quota' }));
+    expect(o.ok).toBe(false);
+    expect(o.error_message).toBe('quota');
+  });
+
+  it('treats bare error string as failure', () => {
+    const o = inferToolInvocationOutcome(JSON.stringify({ error: 'unknown_tool: x' }));
+    expect(o.ok).toBe(false);
+  });
+
+  it('treats ok true as success', () => {
+    expect(inferToolInvocationOutcome(JSON.stringify({ ok: true, items: [] })).ok).toBe(true);
+  });
+});
 
 describe('ToolRegistry', () => {
   it('executes registered tool', async () => {
@@ -28,5 +45,32 @@ describe('ToolRegistry', () => {
       { userId: 'u1' },
     );
     expect(out[0]?.output).toContain('unknown_tool');
+  });
+
+  it('calls persistInvocation when configured', async () => {
+    const persist = vi.fn(async () => {});
+    const reg = new ToolRegistry({ persistInvocation: persist });
+    reg.register({
+      name: 'fail_echo',
+      description: 'd',
+      parametersSchema: { type: 'object' },
+      async execute() {
+        return { output: JSON.stringify({ ok: false, error: 'nope' }) };
+      },
+    });
+    await reg.executeAll(
+      [{ id: '1', name: 'fail_echo', arguments: '{}' }],
+      { userId: 'u1', sessionId: 's1' },
+    );
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: 'u1',
+        session_id: 's1',
+        tool_name: 'fail_echo',
+        ok: false,
+        error_message: 'nope',
+      }),
+    );
   });
 });

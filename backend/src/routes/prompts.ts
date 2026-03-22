@@ -1,30 +1,9 @@
 import { Hono } from 'hono';
 import { PromptRepository, getDb } from '../db';
 import type { Env } from '../env';
+import { requireAdminGate } from '../auth/require-admin';
 import { zodIssues } from '../lib/zod-errors';
 import { promptCreateBodySchema, promptUpdateBodySchema } from '../validation/api-schemas';
-
-function requireAdmin(c: { env: Env; req: { header: (n: string) => string | undefined } }) {
-  const secret = c.env.ADMIN_API_SECRET?.trim();
-  if (!secret) {
-    return {
-      ok: false as const,
-      response: { error: '未配置管理员密钥', code: 'ADMIN_NOT_CONFIGURED' },
-      status: 503 as const,
-    };
-  }
-  const bearer = c.req.header('Authorization')?.replace(/^Bearer\s+/i, '').trim();
-  const headerToken = c.req.header('X-Admin-Token')?.trim();
-  const token = headerToken || bearer;
-  if (!token || token !== secret) {
-    return {
-      ok: false as const,
-      response: { error: '未授权', code: 'UNAUTHORIZED' },
-      status: 401 as const,
-    };
-  }
-  return { ok: true as const };
-}
 
 function rowToJson(row: Awaited<ReturnType<PromptRepository['findById']>>) {
   if (!row) return null;
@@ -40,7 +19,7 @@ function rowToJson(row: Awaited<ReturnType<PromptRepository['findById']>>) {
 export const promptRoutes = new Hono<{ Bindings: Env }>();
 
 promptRoutes.use('*', async (c, next) => {
-  const gate = requireAdmin(c);
+  const gate = requireAdminGate(c);
   if (!gate.ok) {
     return c.json(gate.response, gate.status);
   }

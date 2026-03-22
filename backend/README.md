@@ -65,6 +65,9 @@ Cloudflare Workers + Hono + TypeScript。已完成 **1.1–1.5**、**2.1–2.5**
 12. **阶段四 · 深度研究与可选推理（任务 4.1–4.2）**  
    - 配置 **`SERPER_API_KEY`** 时注册 **`plan_research`**：内部 `PlannerService` + `SubAgent` 复用 **`search` 工具**，Serper 配额与软上限一致。  
    - **`ENABLE_TOT_GOT_TOOLS=true`**（Worker vars 或 `.dev.vars`）时注册 **`tree_of_thoughts`** / **`graph_of_thoughts`**（多轮 LLM，默认关闭）。  
+   - **高德路线（`AMAP_WEB_KEY`）**：写入 `.dev.vars` 或 `wrangler secret put AMAP_WEB_KEY` 后注册 **`amap_geocode`**、**`amap_route_plan`**、**`amap_navigation_uri`**、**`amap_route_static_map`**；规则意图 **`route_query`** 会选用路线专用提示词（迁移 **`0011_route_query_prompt_amap.sql`**，请照常 `db:apply:local` / `remote`）。详见 `docs/agent/tools/gao_de_map/path_plan.md`。  
+   - **提示词 · 联网找图（迁移 `0013_prompt_web_image_search_guidance.sql`）**：仅当用户**明确要求从网上找现成图片**时，用 **`search` + `type: "images"`** 并以 Markdown 图片展示；**不是**凡提到「图片」就检索。  
+   - **工具调用审计表（迁移 `0012_tool_invocations.sql`）**：`POST /api/chat/stream` 每次工具执行写入 **`tool_invocations`**（`user_id`、`session_id`、`tool_name`、`ok`、`error_message`、`duration_ms`、`created_at` Unix 秒）。按时间区间统计：`GET /api/admin/tool-invocations/count?from_sec=&to_sec=`，可选 **`tool_name`**；鉴权与 **`/api/prompts`** 相同（`ADMIN_API_SECRET` + `Authorization: Bearer` 或 **`X-Admin-Token`**）。  
 13. **阶段四 · 上传异步入库（任务 4.3）**  
    - 小文件/分片完成后的 **`waitUntil` 任务**：按 MIME 提取文本（pdf 启发式、docx/xlsx 经 `fflate` 解压解析），分块 **`MemoryService.addToMemory`**；图片/音视频为 **仅元数据**（`processed=1`，不向量化）；解析/向量失败 **`processed=-1`**。可选 **`FILE_EXCEL_MAX_ROWS`** 控制表格类提取体量（见 `file-text-extract.ts`）。
 
@@ -84,7 +87,9 @@ Cloudflare Workers + Hono + TypeScript。已完成 **1.1–1.5**、**2.1–2.5**
 | ----------------------- | -------------------------------------------------- |
 | `migrations/*.sql`      | Wrangler D1 迁移（含 `0009_chat_sessions_v14` 多会话 / `session_id` / users 约束） |
 | `src/vector/*`          | `VectorStore`、`QdrantStore`（REST，Workers 可用） |
-| `src/lib/logger.ts`     | 单行 JSON 日志（`wrangler tail`）                     |
+| `src/lib/logger.ts`     | 单行 JSON 日志（`wrangler tail`）；**文件**需用 `npm run dev:log` tee 到 `ai.log` |
+| `scripts/wrangler-dev-with-log.mjs` | `dev:log`：进程级 tee，Worker 无法写宿主机磁盘 |
+| `src/chat/log-llm-messages.ts` | 调试：`logger.debug` 输出发往 LLM 的每条 message（`msg":"chat llm_message"`），单条 `content` 超长会截断 |
 | `src/observability/metrics.ts` | `recordMetric`（`analytics_metric` 埋点，阶段五 · 5.3） |
 | `test/*.test.ts`        | Vitest 用例                                         |
 | `src/lib/handle-error.ts` | Hono `onError` 统一 JSON                              |
@@ -98,6 +103,9 @@ Cloudflare Workers + Hono + TypeScript。已完成 **1.1–1.5**、**2.1–2.5**
 | `src/tools/user-tool.ts`    | `update_user_profile` |
 | `src/prompt/*`              | `PromptService`、`formatPreferencesSummary`、`{{PREFERENCES_BLOCK}}` |
 | `src/intent/*`              | `IntentClassifier`、`RuleBasedIntentClassifier`、`KNOWN_INTENTS` |
+| `src/chat/system-clock-block.ts` | 每条请求在 **system 最前**拼接**服务器当前时间**（UTC + 上海）及工具纪律（勿反驳与系统一致的日期、找图须 `search`+`images`、禁止自拟新闻图 URL） |
+| `src/chat/history-for-llm.ts`   | 按**相对本会话内最近一条消息**的时间差做衰减：尾部若干条全文保留，较早条软截断 / 远条折叠；`route_query` 时阈值放宽（仍从 DB 取最近 20 条再处理） |
+| `src/chat/detect-web-image-intent.ts` | 识别「网上/搜索找图 + 嵌入」类请求；已配置 Serper 时首轮**仅暴露 `search` + `tool_choice: required`**（与路线场景类似），减少纯文本拒答 |
 | `src/db/schema.ts`      | Drizzle 表定义                                     |
 | `src/db/repositories/*` | 各 Repository                                      |
 | `drizzle.config.ts`     | 可选 schema 对照；**正式迁移以 wrangler SQL 为准** |
@@ -107,6 +115,7 @@ Cloudflare Workers + Hono + TypeScript。已完成 **1.1–1.5**、**2.1–2.5**
 | 命令                      | 说明                       |
 | ------------------------- | -------------------------- |
 | `npm run dev`             | 本地开发（`wrangler dev`） |
+| `npm run dev:log`         | 同上，且**追加**把子进程 stdout/stderr 写入本目录 **`ai.log`**（便于排查长会话；见下「本地日志」） |
 | `npm run deploy`          | 部署到 Cloudflare（默认 `wrangler.toml`） |
 | `npm run deploy:production` | 生产部署（需 `wrangler.production.toml`，见 **`docs/deployment/backend-production.md`**） |
 | `npm run db:apply:production` | 对**生产** D1 执行迁移（库名 `task-assistant-db-production`，与 example 一致） |

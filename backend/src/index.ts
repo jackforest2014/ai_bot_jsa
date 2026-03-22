@@ -7,6 +7,7 @@ import {
   SerperUsageRepository,
   SessionRepository,
   TaskRepository,
+  ToolInvocationRepository,
   UserRepository,
   getDb,
 } from './db';
@@ -25,8 +26,10 @@ import { createPlanResearchTool } from './tools/plan-research-tool';
 import { createGotTool, createTotTool, isTotGotToolsEnabled } from './tools/tot-got-tools';
 import { ToolRegistry } from './tools/tool-registry';
 import { registerTaskTools } from './tools/task-tools';
+import { registerShanghaiCalendarTool } from './tools/shanghai-calendar-tool';
 import { createUpdateUserProfileTool } from './tools/user-tool';
 import { createWorkspaceFilesTool } from './tools/workspace-files-tool';
+import { createAmapTools } from './tools/amap-tools';
 import { createLlmProvider, hasLlmConfigured, resolveLlmProviderKind } from './llm';
 import { createMemoryService, hasMemoryServiceConfig } from './memory';
 import type { Env } from './env';
@@ -37,6 +40,7 @@ import { sessionRoutes } from './routes/sessions';
 import { taskRoutes } from './routes/tasks';
 import { userRoutes } from './routes/user';
 import { promptRoutes } from './routes/prompts';
+import { adminRoutes } from './routes/admin';
 import { CHAT_SSE_EVENTS } from './chat/sse-contract';
 import { chatStreamBodySchema } from './validation/api-schemas';
 import { zodIssues } from './lib/zod-errors';
@@ -82,6 +86,7 @@ app.route('/api/user', userRoutes);
 app.route('/api/workspace', workspaceRoutes);
 app.route('/api/files', fileRoutes);
 app.route('/api/prompts', promptRoutes);
+app.route('/api/admin', adminRoutes);
 
 app.onError(handleError);
 
@@ -296,7 +301,11 @@ app.post('/api/chat/stream', async (c) => {
   const promptRepo = new PromptRepository(db);
   const promptService = new PromptService(promptRepo);
   const conversationRepo = new ConversationRepository(db);
-  const toolRegistry = new ToolRegistry();
+  const toolInvRepo = new ToolInvocationRepository(db);
+  const toolRegistry = new ToolRegistry({
+    persistInvocation: (row) => toolInvRepo.insert(row),
+  });
+  registerShanghaiCalendarTool(toolRegistry);
   registerTaskTools(toolRegistry, new TaskRepository(db));
   const filesRepo = new FileRepository(db);
   toolRegistry.register(
@@ -320,6 +329,13 @@ app.post('/api/chat/stream', async (c) => {
   if (isTotGotToolsEnabled(c.env)) {
     toolRegistry.register(createTotTool(llm));
     toolRegistry.register(createGotTool(llm));
+  }
+
+  const amapKey = c.env.AMAP_WEB_KEY?.trim();
+  if (amapKey) {
+    for (const t of createAmapTools({ apiKey: amapKey })) {
+      toolRegistry.register(t);
+    }
   }
 
   const memoryService = createMemoryService(c.env);

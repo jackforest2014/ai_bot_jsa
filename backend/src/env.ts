@@ -14,6 +14,8 @@ export type Env = FileStorageEnv &
   GeminiEnv &
   QwenDashScopeEnv &
   SerperEnv & {
+    /** 高德地图 Web 服务 Key（地理编码、路径规划、静态图）；勿提交到仓库 */
+    AMAP_WEB_KEY?: string;
     task_assistant_db: D1Database;
     LLM_PROVIDER: string;
     LLM_MODEL: string;

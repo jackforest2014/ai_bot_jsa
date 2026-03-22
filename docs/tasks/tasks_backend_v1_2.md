@@ -2,6 +2,8 @@
 
 本文档基于 [后端技术设计方案 `tech_design_ai_bot_v1_2.md`](../technical/tech_design_ai_bot_v1_2.md)（文档版本至 **1.4**，对齐 **PRD v1.1 / v1.2**）拆解开发任务，按阶段组织。任务粒度以 1 小时为单位，便于进度跟踪。可并行执行的任务放在同一阶段内并列列出。
 
+**编排增强（Orchestrator / 多 Agent）**：见 **`tasks_backend_multi_agent_orchestration.md`** 与技术方案 **§9.9**（文档版本 **1.6+**），与本文档已交付阶段独立增量。
+
 **与技术方案一致的优先级约定**：`projects` 任务分组、**TOT/GOT** 为 **PRD 外可选**（建议 feature flag）；验收以 PRD v1.1 为准时，可先交付必选能力再打开可选模块。
 
 ---

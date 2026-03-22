@@ -131,6 +131,25 @@ components:
           nullable: true
           additionalProperties: true
 
+    TaskItem:
+      type: object
+      description: |
+        任务 REST 返回体（`taskRowToApi`）。`schedule_zh` 为只读：东八区「开始 — 结束」可读串，与工具 `list_tasks` / `summarizeTask` 一致；无日程时为 null。
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        detail:
+          nullable: true
+          description: 自 `detail_json` 解析的对象或原样
+        status: { type: string }
+        project_id: { type: string, nullable: true }
+        starts_at: { type: integer, format: int64, nullable: true, description: Unix 秒，列表「起始」 }
+        ends_at: { type: integer, format: int64, nullable: true }
+        schedule_zh: { type: string, nullable: true, description: 只读；如「2026/3/22 周六 10:00:00 — …」 }
+        created_at: { type: integer, format: int64 }
+        updated_at: { type: integer, format: int64 }
+
     MessageRow:
       type: object
       properties:
@@ -245,10 +264,15 @@ paths:
                   - event: citation
                     description: RAG 命中
                   - event: token
-                    description: 正文增量
+                    description: 正文增量（编排模式下可选 data.source 区分 orchestrator / task_agent / route_agent）
                   - event: tool_call
                   - event: tool_result_meta
+                  - event: orchestrator_plan
+                    description: 多 Agent 编排·子步快照（必选至少一次）；见技术方案 tech_design_ai_bot_v1_2.md §9.9.6.1
+                  - event: orchestrator_progress
+                    description: 编排·高频进度文案与 phase；见 §9.9.6.1
                   - event: done
+                    description: 流结束；编排模式可选 data.orchestrator { correlation_id, outcome }
 
   /api/auth/profile-exists:
     get:
@@ -501,7 +525,12 @@ paths:
           schema: { type: string, nullable: true }
       responses:
         '200':
-          description: 任务数组（结构见实现 taskRowToApi）
+          description: 任务数组
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TaskItem' }
     post:
       tags: [Tasks]
       security: [{ bearerAuth: [] }]
@@ -509,6 +538,9 @@ paths:
       responses:
         '201':
           description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskItem' }
 
   /api/tasks/{id}:
     get:
@@ -523,6 +555,9 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskItem' }
         '404':
           description: 不存在
     put:
@@ -537,6 +572,9 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskItem' }
     delete:
       tags: [Tasks]
       security: [{ bearerAuth: [] }]

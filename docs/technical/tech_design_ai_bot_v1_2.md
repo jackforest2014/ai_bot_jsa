@@ -8,6 +8,10 @@
 | 1.2 | 2026-03-21 | AI Assistant | 完善文件上传进度反馈；增加场景化 Prompt 模板与意图识别；扩展 conversations 表结构 |
 | 1.3 | 2026-03-21 | AI Assistant | 对照 PRD v1.1 修订：去重章节、补齐 FileTool/SSE 引用块、文件夹与标签字段、任务 detail、用户偏好、Serper 配额、搜索类型与文件处理策略说明；标明 TOT/GOT 与 projects 为 PRD 外可选扩展 |
 | 1.4 | 2026-03-21 | AI Assistant | 对齐 [PRD v1.2](../products/ai_bot_v1_1.md)：`chat_sessions` 多会话、`messages.session_id`、匿名昵称登录与可选邮箱、会话历史 API、首轮资料缺口 Prompt、流式结束后自动标题、认证接口 |
+| 1.5 | 2026-03-22 | AI Assistant | 新增 **§9.9 多 Agent 编排**（Orchestrator + 专业 Agent、`confirm_tool_creation`、Agent 内 GOT 可选、进程内 AgentBus 预留）；任务拆解见 [`docs/tasks/tasks_backend_multi_agent_orchestration.md`](../tasks/tasks_backend_multi_agent_orchestration.md) |
+| 1.6 | 2026-03-22 | AI Assistant | §9.9 产品约束：**子任务 2 无需用户点确认**（任务成功后自动进入路线 Agent）；**重试前 `confirm_tool_creation`** 防重复建任务；分解策略先实现再迭代；**成本暂不纳入优化目标**；**体感延迟**靠 Orchestrator 经 SSE 高频同步阶段与进度 |
+| 1.7 | 2026-03-22 | AI Assistant | §9.9.6.1 / §9.9.6.2：编排模式 **SSE 最小事件集合** 字段级契约 + TypeScript 形状；兼容旧前端忽略未知事件 |
+| 1.8 | 2026-03-22 | AI Assistant | §9.9.10：**主 Agent / 编排无法识别或分解失败** 时的降级（`default` 意图、`fallback_single_chat`、空 `steps`） |
 
 ### 与 PRD v1.1 / v1.2 的范围说明
 
@@ -65,6 +69,7 @@
   - [9.6 意图识别与 Prompt 模板选择](#96-意图识别与-prompt-模板选择)
   - [9.7 对话记录持久化](#97-对话记录持久化)
   - [9.8 总结](#98-总结)
+  - [9.9 多 Agent 编排：Orchestrator 与专业 Agent（演进）](#99-多-agent-编排orchestrator-与专业-agent演进)
 - [10. 类图（Mermaid）](#10-类图mermaid)
 - [11. 主要交互流程（Mermaid）](#11-主要交互流程mermaid)
   - [11.1 完整对话流程（含意图识别与模板选择）](#111-完整对话流程含意图识别与模板选择)
@@ -1854,7 +1859,7 @@ private async saveConversation(
 
 ### 9.8 总结
 
-本方案通过轻量自研实现了完整的 Agent 能力：
+本方案通过轻量自研实现了完整的 Agent 能力（**当前实现**以单管道 `ChatService` + ReAct 为主；**复合意图串行编排**见 **§9.9**）：
 
 - **ReAct 循环**：支持多轮工具调用，由 LLM 自主决策。
 - **工具注册与调用**：声明式工具定义，支持任意扩展。
@@ -1865,6 +1870,305 @@ private async saveConversation(
 - **可观测性**：完整记录意图、模板、关键词，便于后续分析和优化。
 
 所有代码在 Cloudflare Workers 边缘运行，保持低延迟和高性能，同时具备良好的可扩展性和维护性。
+
+---
+
+### 9.9 多 Agent 编排：Orchestrator 与专业 Agent（演进）
+
+> **定位**：在保留现有 **单请求内 `ChatService` + ReAct** 的前提下，对「一句用户话隐含**多类能力**（如任务落库 + 路线规划）」引入 **显式编排层**，降低「一次暴露大量 tools、模型漏调 `add_task`」的不确定性。本节为**架构规划**，实现任务见 [`docs/tasks/tasks_backend_multi_agent_orchestration.md`](../tasks/tasks_backend_multi_agent_orchestration.md)。
+
+#### 9.9.1 可行性结论（简要）
+
+| 维度 | 评估 |
+|------|------|
+| **技术可行性** | 高。编排层仍是 **同进程、同一次 SSE 连接** 内的状态机 + 多段 LLM 调用，与当前 Workers 模型兼容；无需分布式消息队列即可落地 v1。 |
+| **产品收益** | 用户可见「分步清单」；任务写库与路线解耦；**失败即止**避免幻觉链式扩散。 |
+| **Token / 费用** | **当前阶段不作为优化目标**（不为此削减编排轮次或 GOT 深度）；后续若有成本约束再单列迭代。 |
+| **墙钟延迟与体感** | 多轮 LLM 客观耗时可能上升；通过 **Orchestrator 统一持有 SSE 输出**、**阶段切换与子 Agent 进度及时下发**（事件与字段见 **§9.9.6.1**），让用户持续看到「正在分解 / 正在建任务 / 正在确认 / 正在规划路线」等反馈，**体感上保持连续交互**。 |
+| **需注意的风险** | 见 **§9.9.7**；重试前 **`confirm_tool_creation`** 与 DB 对齐，避免重复插入。 |
+
+#### 9.9.2 目标形态（示例句）
+
+用户：「25号要去一趟苏州，和那边园林相关的师傅见个面。」
+
+1. **Orchestrator（总 Agent）** 解析出 **子目标序列**（示例）：  
+   - 子任务 1：**建立/更新日程类任务**（Task Agent）  
+   - 子任务 2：**路线规划**（Route Plan Agent）— *当分解结果包含该步且子任务 1 **已成功**；**不要求用户再点确认**，由系统自动进入（体现「智能重试 / 自动衔接」）*。  
+2. 向用户输出结构化说明，例如：  
+   - 「您可能需要先做两件事：① 建立 … 的任务；② 再进行路线规划。我们按顺序来，先完成第 ① 步。」  
+3. **串行执行**：子任务 1 **完全结束（成功或失败并告知用户）** 前，不启动子任务 2；**若 ① 失败，终止流水线**（不再进入路线阶段）。
+
+#### 9.9.3 角色与职责
+
+| 角色 | 职责 | 工具范围（示意） |
+|------|------|------------------|
+| **Orchestrator** | 意图分解、阶段切换、**统一向 SSE 写入阶段与进度文案**、失败止损、串联子 Agent | 可无工具或仅「元工具」（如 `handoff_to_agent`）；**禁止**代替子 Agent 直接写库 |
+| **Task Agent** | 追问任务细节、`resolve_shanghai_calendar`、`add_task` / `update_task`、**写库后校验** | 任务域工具 + `confirm_tool_creation` |
+| **Route Plan Agent** | 追问起终点、时间偏好、交通方式；调用高德系工具 | `amap_*`（与现 `route_query` 能力对齐） |
+| **其他专业 Agent** | 与 **一种用户意图类别** 对齐（如 `research` → Research Agent），内部可独立演进 | 按场景注册 |
+
+各 **专业 Agent 内部** 支持 **图结构推理（GOT）**：作为 **可选子引擎**（feature flag），简单场景仍可用线性 ReAct；复杂追问链再用 GOT 展开。
+
+#### 9.9.4 任务创建闭环：`add_task` + `confirm_tool_creation`
+
+- **`confirm_tool_creation`（新工具，须实现）**  
+  - **输入**：`task_id`（来自 `add_task` 成功返回的 UUID）、可选 `title_hint` 用于二次校验。  
+  - **行为**：在当前 `user_id` 下 **读 D1**（`TaskRepository.getById` 或等价），确认行存在且归属正确。  
+  - **输出**：`{ ok: true, task: … }` 或 `{ ok: false, reason: … }`。  
+- **与模型回复的关系**：仅当 `confirm_tool_creation.ok === true` 时，才允许向用户说「任务已创建」；否则输出「任务创建遇到问题，正在重试」并进入重试策略。  
+- **`add_task` 重试（最多 3 次）与防重复创建**：**每次重试 `add_task` 之前**必须先根据当前已知 `task_id` 调用 **`confirm_tool_creation`**（或等价读库）：  
+  - 若 **已存在** 有效任务行 → **视为已成功**，**不得**再次 `add_task`，直接结束 Task 阶段并进入后续（或向用户说明已存在）。  
+  - 若 **确认无行** 或 `add_task` 从未成功返回 id → 才允许发起下一次 `add_task`。  
+  - 这样体现「智能重试」：**用读库确认代替盲目重复插入**。  
+- 可选扩展：**幂等键**（`client_correlation_id` 写入 `detail_json` 等）— 见实现任务文档。  
+- **SSE**：在 `confirm` 成功或最终失败时，沿用/扩展 **`tool_result_meta`** / **`status` 或专用 orchestrator 事件**，驱动前端 **任务列表面板刷新**。
+
+#### 9.9.5 Route Plan Agent（子任务 2）
+
+- 在 **子任务 1 已成功**（含 `confirm_tool_creation` 通过）后 **自动启动**，**无需用户额外点击确认**。  
+- 若分解结果中 **不包含** 路线类子步，则不进入本子 Agent。  
+- 收集：**起点、终点、时间要求、交通方式** 等；调用 **`amap_geocode` / `amap_route_plan` / `amap_navigation_uri` / `amap_route_static_map`**（与现有高德工具一致）。  
+- 输出须继续遵守「链接/图来自工具返回值」的纪律。
+
+#### 9.9.6 SSE、体感延迟与 Orchestrator 对流式的控制
+
+- **单一流式连接**：对用户仍是一条 **`POST /api/chat/stream` 响应**；**Orchestrator 作为唯一「对外发言人」**（或统一 `send()` 入口），子 Agent 不各自开 SSE。  
+- **高频同步**：在分解完成、进入 Task Agent、每次工具前后、`confirm` 重试、转入 Route Agent、高德工具执行等节点，**及时**向下游发送下列事件（见下表）。  
+- **目标**：即使用户等待多轮 LLM，界面仍持续有更新，**降低「卡住」感**；与「当前阶段不优化 token 成本」不矛盾。  
+- **兼容**：未识别 `orchestrator_*` 的旧前端应 **忽略未知 `event` 名**（SSE 标准行为），仍可消费 `token` / `done` / `tool_result_meta`。
+
+##### 9.9.6.1 Orchestrator 模式下的 SSE 最小集合（字段级契约）
+
+以下约定 **一次用户发送消息、进入多 Agent 编排**时的 **下限**（实现可多发，不得少发「必选」行）。帧格式与现网一致：`event: <名称>` + `data: <JSON>` + 空行（见 §5.1）。
+
+**贯穿字段**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `correlation_id` | `string`（UUID） | **本条用户消息**在本次 `POST /api/chat/stream` 内唯一；所有 `orchestrator_*` 及本条末尾可选的 `done.orchestrator` 须一致，便于前端与日志对齐。 |
+| `schema_version` | `number` | 编排 payload 版本；当前为 **`1`**，后续仅增量扩字段、不改语义。 |
+
+---
+
+**事件：`orchestrator_plan`**（必选，至少 **1** 次）
+
+| 时机 | 分解完成并得到有序子步后立刻发送；任一步的 `status` 变化时 **应再次发送** 全量或增量（实现二选一：全量快照最简单）。 |
+|------|------------------------------------------------------------------|
+
+`data` JSON：
+
+| 字段 | 类型 | 必选 | 说明 |
+|------|------|------|------|
+| `correlation_id` | `string` | 是 | 见上 |
+| `schema_version` | `number` | 是 | `1` |
+| `steps` | `array` | 是 | 有序子任务列表，供 UI 步骤条使用 |
+| `steps[].id` | `string` | 是 | 稳定 id，如 `s1`、`s2` |
+| `steps[].type` | `string` | 是 | 枚举：`task` \| `route` \| `research` \| …（未知类型前端可降级为纯文案） |
+| `steps[].title` | `string` | 是 | 短标题，如「建立日程任务」「路线规划」 |
+| `steps[].status` | `string` | 是 | `pending` \| `running` \| `done` \| `skipped` \| `failed` |
+
+示例：
+
+```json
+{
+  "correlation_id": "7c9e2b1a-…",
+  "schema_version": 1,
+  "steps": [
+    { "id": "s1", "type": "task", "title": "建立日程任务", "status": "running" },
+    { "id": "s2", "type": "route", "title": "路线规划", "status": "pending" }
+  ]
+}
+```
+
+---
+
+**事件：`orchestrator_progress`**（必选，**多次**）
+
+| 时机（至少覆盖） | 收到用户消息后、`orchestrator_plan` 前（可选）；`orchestrator_plan` 后；进入 Task / Route 子 Agent 前后；**每次** `confirm_tool_creation` 与 **每次** `add_task` 重试前后；子 Agent 内每次批量工具执行前后（可选，建议发）；流水线结束或放弃前。 |
+|------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+
+`data` JSON：
+
+| 字段 | 类型 | 必选 | 说明 |
+|------|------|------|------|
+| `correlation_id` | `string` | 是 | 见上 |
+| `schema_version` | `number` | 是 | `1` |
+| `phase` | `string` | 是 | 机器可读阶段，建议枚举：`decompose` \| `task_agent` \| `task_tool` \| `task_confirm` \| `task_retry` \| `route_agent` \| `route_tool` \| `finalize` \| `fallback_single_chat` |
+| `step_id` | `string` \| `null` | 否 | 关联 `orchestrator_plan.steps[].id`；无对应步时 `null` |
+| `attempt` | `number` | 否 | 当前子步内重试序号，从 **1** 起；无重试可省略 |
+| `message` | `string` | 是 | **给用户看的**一行说明（中文即可），如「正在确认任务是否已写入数据库…」 |
+| `level` | `string` | 否 | `info`（默认）\| `warn` \| `error` |
+
+---
+
+**事件：`status`（必选，与现网兼容）**
+
+| 时机 | 连接建立、拉 RAG、模型生成、工具执行等 **现有**节点仍发送；进入编排时建议额外发送 `phase` 为下列之一，便于只订阅 `status` 的轻量客户端感知： |
+|------|------------------------------------------------------------------|
+
+`data` JSON（在现有字段基础上 **可选扩展**）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `phase` | `string` | 保留现有：`connected`、`memory_retrieving`、`model_generating`、`tools_running` 等；**新增**可选：`orchestrating`（表示处于多 Agent 编排中，详情见 `orchestrator_progress`） |
+| `reason` | `string` | 与现有一致，可选 |
+| `correlation_id` | `string` | 可选；**建议**在 `phase === 'orchestrating'` 时带上，与编排事件对齐 |
+
+---
+
+**事件：`token`**（条件必选）
+
+| 时机 | 子 Agent 流式输出 **用户可见正文**时，与现 `ChatService` 一致，**增量**发送。 |
+|------|------------------------------------------------------------------|
+
+`data` JSON：
+
+| 字段 | 类型 | 必选 | 说明 |
+|------|------|------|------|
+| `content` | `string` | 是 | 正文增量 |
+| `source` | `string` | 否 | 建议编排模式下填写：`orchestrator` \| `task_agent` \| `route_agent`，供前端区分字体/缩进；省略则视为与历史行为兼容的「主助手」流 |
+
+---
+
+**事件：`tool_call` / `tool_result_meta`**（条件必选）
+
+| 时机 | 与现网一致：发起工具调用与需要刷新侧栏等元信息时 **必须**发送，字段形状不变。 |
+|------|------------------------------------------------------------------|
+
+---
+
+**事件：`intention`**（推荐）
+
+| 时机 | Orchestrator 若仍做顶层意图分类，可发送；**无则**可省略（由 `orchestrator_plan` 承担语义）。 |
+|------|------------------------------------------------------------------|
+
+---
+
+**事件：`done`**（必选）
+
+| 时机 | 本条流正常结束；**必须**发送（与现网一致）。 |
+|------|------------------------------------------------------------------|
+
+`data` JSON **可选扩展**（编排模式推荐带上，便于前端收尾）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `orchestrator` | `object` | 仅编排路径 |
+| `orchestrator.correlation_id` | `string` | 与本轮一致 |
+| `orchestrator.outcome` | `string` | `success` \| `partial`（如任务成、路线跳过）\| `failed` |
+
+---
+
+**前端消费建议（最小实现）**
+
+1. 用 **`orchestrator_plan`** 渲染步骤条；用 **`orchestrator_progress.message`** 渲染进度/日志行。  
+2. **`token`** 拼接主对话气泡；若带 `source`，可对 `task_agent` / `route_agent` 做弱样式区分。  
+3. **`tool_result_meta`** 继续驱动任务列表等；**`done.orchestrator.outcome`** 做结束态图标或 toast。  
+4. 忽略未知 `event` 名与未知 `phase` / `steps[].type`。
+
+##### 9.9.6.2 TypeScript 形状（便于前后端共用的单文件类型）
+
+```typescript
+/** 编排 SSE：schema_version === 1 */
+export type OrchestratorStepType = 'task' | 'route' | 'research' | string;
+export type OrchestratorStepStatus = 'pending' | 'running' | 'done' | 'skipped' | 'failed';
+
+export interface OrchestratorPlanPayload {
+  correlation_id: string;
+  schema_version: 1;
+  steps: Array<{
+    id: string;
+    type: OrchestratorStepType;
+    title: string;
+    status: OrchestratorStepStatus;
+  }>;
+}
+
+export type OrchestratorProgressPhase =
+  | 'decompose'
+  | 'task_agent'
+  | 'task_tool'
+  | 'task_confirm'
+  | 'task_retry'
+  | 'route_agent'
+  | 'route_tool'
+  | 'finalize'
+  | 'fallback_single_chat';
+
+export interface OrchestratorProgressPayload {
+  correlation_id: string;
+  schema_version: 1;
+  phase: OrchestratorProgressPhase | string;
+  step_id?: string | null;
+  attempt?: number;
+  message: string;
+  level?: 'info' | 'warn' | 'error';
+}
+
+export interface ChatStreamDoneOrchestrator {
+  correlation_id: string;
+  outcome: 'success' | 'partial' | 'failed';
+}
+```
+
+#### 9.9.7 风险与迭代策略
+
+1. **分解过判 / 漏判**：**第一版按既定 Orchestrator 规则实现即可**；上线后根据真实对话与埋点迭代分解 Prompt 或规则，**不阻塞首发**。  
+2. **单连接内多阶段 UX**：须区分 **Orchestrator 阶段说明** 与子 Agent **流式正文**；建议专用事件或 `status.phase` 字段，避免前端混排。  
+3. **`tool_choice: required` 的历史漏洞**（只调 `list_tasks`）：编排下 **Task Agent** 工具集与策略层收紧，要求新建路径必须命中 **`add_task`**（或显式 `update_task`），见任务列表。  
+4. **重试与重复任务**：以 **§9.9.4** 的「重试前先 `confirm`」为硬性约定。  
+5. **GOT**：默认关闭或仅复杂场景开启；可观测性上继续记录 `llm_chat_stream` 轮次与耗时。
+
+#### 9.9.8 Agent 间通信（进程内，预留）
+
+- **范围**：同一 Worker 进程内，**不考虑**跨机分布式 Agent。  
+- **预留接口（示意）**：`AgentBus` / `AgentContext`  
+  - `publish(topic, envelope)` / `subscribe` 或 **显式 `handoff({ from, to, intent, payload })`**。  
+  - `envelope` 含：`correlation_id`、`session_id`、`user_id`、**只读快照**（如已创建 `task_id`、已解析的日历结果），避免子 Agent 互相直接改共享可变状态。  
+- **当前阶段**：可无跨 Agent 消息（Orchestrator 直接函数调用子 Runner）；接口先 **定义 TypeScript 类型 + 空实现或日志桩**，便于后续「子 Agent 回调 Orchestrator」「并行分支合并」等扩展。
+
+#### 9.9.9 与现有代码关系
+
+- **现状**：`ChatService` 单管道 ReAct；`PlannerService` 仅服务于 **`plan_research`**。  
+- **演进**：引入 **`OrchestrationService`（命名可调整）** 于 `POST /api/chat/stream` 内 **在用户消息进入原 `ChatService` 之前或替代其最外层**，按「是否多子目标」分支：  
+  - 简单句 → 保持现有路径（降低回归面）；  
+  - 复合句 → 走 Orchestrator 流水线。  
+- 具体文件布局与迁移步骤以任务列表文档为准。
+
+#### 9.9.10 主 Agent「识别不出意图」与零子步时的处理
+
+**会不会出现「完全没有意图」？** 分两层：
+
+1. **现网（规则意图分类器 `RuleBasedIntentClassifier`）**  
+   - 没有任何规则命中时，**不会**返回空值，而是回退为 **`default`**（见 §9.6）。  
+   - 即：始终有一个字符串意图；**`default` 表示「未落入已知业务类」**，仍走 **`default` 场景模板 + 全量工具** 的 `ChatService` ReAct，由模型在对话中理解用户。  
+   - 因此**不存在**「后端无处可走、直接 4xx」的意图真空；最差情况是 **泛化对话**，工具由模型按需选用。
+
+2. **演进中的 Orchestrator（LLM 分解子步）**  
+   - 可能出现：**解析失败**、**JSON 不合规**、**steps 为空**、或模型明确表示无法分解。  
+   - **处理策略（推荐写死）**：**不启动**任何专业子 Agent，进入 **`fallback_single_chat`**（与 `orchestrator_progress.phase` 枚举一致）：  
+     - **委托现有 `ChatService` 单管道**（与今日行为一致）：同一条 SSE，照常 `token` / `tool_call` / `done`。  
+   - **SSE**：至少一条 `orchestrator_progress`，`phase: "fallback_single_chat"`，`message` 向用户简短说明「按常规对话处理」；**可不发送** `orchestrator_plan`，或发送 `steps: []` 且 `done.orchestrator.outcome` 为 `partial`/`success`（与产品约定二选一，实现保持前后端一致即可）。  
+   - **与「识别不出」的语义对齐**：Orchestrator 的「识别不出」= **无法得到可执行子步列表** → **降级为单 Agent**，而不是报错中断（除非 LLM/网络整体失败，走现有流式错误分支）。
+
+**小结**：规则层没有「无意图」只有 **`default`**；编排层「分解失败」则 **`fallback_single_chat`** 回退到现有对话管线，保证用户始终收到流式回复（在依赖服务正常的前提下）。
+
+```mermaid
+flowchart TD
+  U[用户消息] --> O[Orchestrator]
+  O -->|分解失败或 steps 为空| FSC[fallback_single_chat 等同现网 ChatService]
+  O -->|SSE 阶段说明| UX[用户可见进度]
+  O --> T[Task Agent]
+  T --> AT[add_task]
+  AT --> CF[confirm_tool_creation]
+  CF -->|ok 且分解含路线| P[Route Plan Agent 自动启动]
+  CF -->|ok 且无路线步| E[结束本请求]
+  CF -->|不 ok 先查库| Q{confirm 显示已存在?}
+  Q -->|是| E
+  Q -->|否 重试≤3| AT
+  CF -->|最终失败| F[终止并提示]
+  P --> AM[amap_*]
+```
 
 ---
 

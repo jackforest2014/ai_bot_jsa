@@ -9,13 +9,18 @@ export interface UseTasksOptions {
   enabled?: boolean
 }
 
+export interface RefreshTasksOptions {
+  /** 为 true 时不切换 loading，避免侧栏在对话触发的刷新时闪烁 */
+  silent?: boolean
+}
+
 export interface UseTasksResult {
   tasks: Task[]
   loading: boolean
   error: string | null
   query: TaskListQuery
   setQuery: (q: TaskListQuery | ((prev: TaskListQuery) => TaskListQuery)) => void
-  refresh: () => Promise<void>
+  refresh: (opts?: RefreshTasksOptions) => Promise<void>
   create: (title: string) => Promise<Task | null>
   complete: (id: string) => Promise<void>
   remove: (id: string) => Promise<void>
@@ -31,9 +36,10 @@ export function useTasks(
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState<TaskListQuery>(initialQuery)
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (opts?: RefreshTasksOptions) => {
     if (!enabled) return
-    setLoading(true)
+    const silent = opts?.silent === true
+    if (!silent) setLoading(true)
     setError(null)
     try {
       const list = await listTasks(query)
@@ -43,7 +49,7 @@ export function useTasks(
       setError(msg)
       toast.error(msg)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [enabled, query])
 

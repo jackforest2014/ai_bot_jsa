@@ -1,5 +1,7 @@
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
+/** Worker 内仅 console；本地全量落盘请用 `npm run dev:log`（tee 到 `backend/ai.log`）。 */
+
 function emit(level: LogLevel, msg: string, meta?: Record<string, unknown>): void {
   const payload = {
     level,

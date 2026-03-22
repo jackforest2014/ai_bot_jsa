@@ -13,14 +13,41 @@ export type SearchToolOptions = SerperClientOptions & {
   quota: SerperQuotaService;
 };
 
-function normalizeMetaItems(raw: unknown[]): { title?: string; link?: string; snippet?: string }[] {
+export type NormalizedSearchItem = {
+  title?: string;
+  link?: string;
+  snippet?: string;
+  /** Serper Google Images 等返回的直链，供 `![](url)` 嵌入 */
+  image_url?: string;
+};
+
+function pickImageUrl(o: Record<string, unknown>): string | undefined {
+  const direct = pickString(o, [
+    'imageUrl',
+    'imageURL',
+    'thumbnailUrl',
+    'thumbnailLink',
+    'thumbnail',
+    'contentUrl',
+    'src',
+  ]);
+  if (direct) return direct;
+  const nested = o.image;
+  if (nested && typeof nested === 'object') {
+    return pickString(nested as Record<string, unknown>, ['url', 'link', 'src', 'contentUrl']);
+  }
+  return undefined;
+}
+
+function normalizeMetaItems(raw: unknown[]): NormalizedSearchItem[] {
   return raw.map((item) => {
     if (!item || typeof item !== 'object') return {};
     const o = item as Record<string, unknown>;
     const title = pickString(o, ['title', 'name']);
     const link = pickString(o, ['link', 'url', 'source']);
     const snippet = pickString(o, ['snippet', 'description']);
-    return { title, link, snippet };
+    const image_url = pickImageUrl(o);
+    return { title, link, snippet, image_url };
   });
 }
 
@@ -39,7 +66,7 @@ export function createSearchTool(opts: SearchToolOptions): Tool {
   return {
     name: 'search',
     description:
-      '搜索实时公开信息（Google/Serper）。type 与 Serper 类型一致：organic、news、images、videos、places、shopping、scholar、patents。',
+      '搜索实时公开信息（Google/Serper）。type 与 Serper 类型一致：organic、news、images、videos、places、shopping、scholar、patents。type 为 images 时，成功返回的 items 常含 image_url（图片直链）与 link（来源页）。',
     parametersSchema: {
       type: 'object',
       properties: {

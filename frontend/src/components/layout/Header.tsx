@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 
+import HeaderBrandGlyph from '@/components/layout/HeaderBrandGlyph'
 import { useUiStore } from '@/store/uiStore'
 import { useThemeStore } from '@/store/themeStore'
 import { useUserStore } from '@/store/userStore'
@@ -34,8 +35,9 @@ export default function Header() {
           >
             {sidebarCollapsed ? '»' : '«'}
           </button>
+          <HeaderBrandGlyph colorScheme={colorMode} className="h-9 w-9 shrink-0" />
           <h1 className="truncate bg-gradient-to-r from-cyan-700 via-sky-700 to-indigo-700 bg-clip-text text-lg font-semibold text-transparent dark:from-cyan-200 dark:via-sky-300 dark:to-indigo-300">
-            AI Bot
+            AI Assistant
           </h1>
         </div>
         <div className="flex shrink-0 items-center gap-2">

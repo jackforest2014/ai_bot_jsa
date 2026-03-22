@@ -62,7 +62,7 @@ export async function serperRequest(
   }
 }
 
-/** 供 SSE `tool_result_meta` 摘要（不同 type 字段名不同，尽量抽取 title/link/snippet） */
+/** 供 SSE `tool_result_meta` 摘要（不同 type 字段名不同；images 等还含 imageUrl 等，由 search-tool 归一成 image_url） */
 export function extractSerperItemsForMeta(type: SerperSearchType, data: unknown): unknown[] {
   if (!data || typeof data !== 'object') return [];
   const d = data as Record<string, unknown>;

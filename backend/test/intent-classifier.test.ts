@@ -6,6 +6,7 @@ describe('RuleBasedIntentClassifier', () => {
 
   it('classifies research', async () => {
     expect(await clf.classify('请深度研究量子计算')).toBe('research');
+    expect(await clf.classify('我住中关村，坐地铁怎么去天安门')).toBe('route_query');
   });
 
   it('file_upload before workspace_operation', async () => {
