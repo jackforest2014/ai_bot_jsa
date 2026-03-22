@@ -45,7 +45,8 @@ JWT_SECRET = "local-dev-jwt-secret-change-me"
 # ROUTE_AGENT_GOT_ENABLED = "true"
 # FILE_EXCEL_MAX_ROWS = "500"  # 异步解析 xlsx 时文本上限的粗略刻度（见 file-text-extract）
 # 多 Agent 编排（OrchestrationService）：true / 1 开启；未配置则关闭（见 docs/orchestration/product-rules.md）
-# ORCHESTRATION_ENABLED = "false"
+# 与 Worker Dashboard 保持一致，避免 deploy 时覆盖掉 Dashboard 中的 true
+ORCHESTRATION_ENABLED = "true"
 
 # [env.preview]
 # vars = { ... }
