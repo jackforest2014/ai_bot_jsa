@@ -4,6 +4,8 @@
 
 **编排增强（Orchestrator / 多 Agent）**：见 **`tasks_backend_multi_agent_orchestration.md`** 与技术方案 **§9.9**（文档版本 **1.6+**），与本文档已交付阶段独立增量。
 
+**深度研究质量增强（证据分层 / 失败回退）**：见 **`tasks_backend_research_quality_upgrade.md`**（在不推翻现有 `plan_research` 架构前提下增量升级）。
+
 **与技术方案一致的优先级约定**：`projects` 任务分组、**TOT/GOT** 为 **PRD 外可选**（建议 feature flag）；验收以 PRD v1.1 为准时，可先交付必选能力再打开可选模块。
 
 ---

@@ -14,6 +14,8 @@
 | 1.8 | 2026-03-22 | AI Assistant | §9.9.10：**主 Agent / 编排无法识别或分解失败** 时的降级（`default` 意图、`fallback_single_chat`、空 `steps`） |
 | 1.9 | 2026-03-22 | AI Assistant | **§9.1.1 事实检索与 Search Agent**：首轮 `search(organic)` 强制、与找图/高德/任务收窄的优先级、ReAct 上限 3 轮；`token.source: search_agent`；`detect-factual-web-search-intent` 与系统时钟规则 3（b）对齐说明 |
 
+> **下一阶段（v1.3）**：[**`tech_design_ai_bot_v1_3.md`**](./tech_design_ai_bot_v1_3.md) 整合本文中**尚未完全落地**的能力（如 §8.3/§8.4 部分设想、§9.9.8 AgentBus 预留等）及 **GraphRAG** 等新增规划；**基线架构与已交付能力仍以本文 v1.2 为准**。
+
 ### 与 PRD v1.1 / v1.2 的范围说明
 
 - **必选对齐**：对话式任务与文件管理、Serper 搜索与降级、RAG、工作空间上传与进度、64MB 限制、数据隔离等均按 PRD 设计。
