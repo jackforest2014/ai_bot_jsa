@@ -268,3 +268,26 @@ Edited ai_proxy_demo.md
 安排上了！我已经为 `tech_design_ai_proxy_demo.md` 技术方案的顶部添加了完整的 Markdown 目录导航，涵盖了从架构概览到底层数据库扩充，再到接口链路和安全沙盒的全部 5 个章节结构。这样你在编码和查阅时会方便很多。
 
 同时，这单独增加目录的互动回合，我也一成不变地追加到了 `workflow` 文件末尾啦！我们接下来要开始写代码了吗？
+
+---
+
+## **User (回合 15)**
+先别着急写代码。
+先根据技术文档设计任务列表。放到 @[/Users/wangbenlin/Documents/projects/ai_bot/docs/tasks] 下面，也是 markdown 文件。
+之后按照该任务列表文档来推动写代码的工作。
+
+## **AI (回合 15)**
+非常严谨的做法！把架构拆解成具体的、可执行的待办事项 (Task List)，能极大地保障后续代码开发的流畅度和正确性。
+
+我已经在 `docs/tasks` 目录下为你创建了工作拆解文件：`tasks_ai_proxy_demo.md`。
+
+这份任务列表分为五个主要阶段：
+1. **P0: 数据库结构更新 (Database Schemas & Migration)**
+2. **P1: 核心 API 路由开发 (API Routes)**
+3. **P2: Agent沙盒机制与安全隔离 (Agent & RAG Sandbox)**
+4. **P3: 前端界面交互 (Frontend UI / UX)**
+5. **P4: 综合测试 (Testing)**
+
+这些任务均已通过 Markdown Checkbox (`-[ ]`) 进行追踪，后续我们在编码时，每完成一个模块，就回填并打钩。这段对话也一如既往地追加到 `workflow/ai_proxy_demo_prd_discussion_20260401.md` 的记录中了。
+
+准备好的话，我们可以随时开始进行第一步 **P0 数据库迁移** 的工作！
