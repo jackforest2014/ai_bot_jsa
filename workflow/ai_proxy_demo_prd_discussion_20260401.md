@@ -241,3 +241,30 @@ Edited ai_proxy_demo.md
 我已经在 `ai_proxy_demo.md` 的开头（文档版本控制表之后，正文之前）为你生成并插入了完整的 Markdown 目录，层级从第一大点“产品概述”一直覆盖到了第五点“关键技术细节”。
 
 本次的变动连同这两句对话，我也依旧记录在案咯。你看现在的文档格式满意了吗？
+
+---
+
+## **User (回合 13)**
+很好。基于该设计文档 @[/Users/wangbenlin/Documents/projects/ai_bot/docs/products/ai_proxy_demo.md] ，和项目的现状，设计并编写用于描述技术实现的技术设计文档，放到 @[/Users/wangbenlin/Documents/projects/ai_bot/docs/technical] 下面。
+
+## **AI (回合 13)**
+我已经深入查看了项目后端的 Drizzle 数据库定义文件 (`src/db/schema.ts`)，结合我们刚才确定的“双所有权”业务模型设计，为你编写了一份详尽的技术架构设计文档。
+
+文档已保存于：`docs/technical/tech_design_ai_proxy_demo.md`。
+
+这份技术文档覆盖了以下核心实现：
+1. **Drizzle Schema 的变动计划**：针对 `users`, `chat_sessions`,  `tasks` 三个表提出低侵入的平滑字段扩展策略，明确确认了负责包裹消息上下文的是 `chat_sessions` 表。
+2. **API 路由与上传收敛逻辑**：如何通过新的 API 给现有 Worker 上传逻辑增加强行覆盖 `folder=人设` 的逻辑，并分发 `proxy_uuid` 链接。
+3. **Agent 引擎的沙盒隔离设计**（最关键）：阐述了通过 `ChatService` 实现 System Prompt 动态抽取、RAG 向量检索边界拦截防御侧信道泄漏（Side-Channel），以及 `CreateTaskTool` 的自动追溯强制挂载机制。
+
+本轮对话我也按照约定原封不动地追加进 `workflow` 的回顾记录中了！你可以去看看这份技术文档是否契合你的构想。如果没问题，我们可以开始分步提 PR 和写代码了。
+
+---
+
+## **User (回合 14)**
+请为新的 md 文档加个目录。
+
+## **AI (回合 14)**
+安排上了！我已经为 `tech_design_ai_proxy_demo.md` 技术方案的顶部添加了完整的 Markdown 目录导航，涵盖了从架构概览到底层数据库扩充，再到接口链路和安全沙盒的全部 5 个章节结构。这样你在编码和查阅时会方便很多。
+
+同时，这单独增加目录的互动回合，我也一成不变地追加到了 `workflow` 文件末尾啦！我们接下来要开始写代码了吗？
