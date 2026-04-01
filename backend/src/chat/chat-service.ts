@@ -347,7 +347,9 @@ export class ChatService {
           });
 
           if (proxyForUserId && this.fileRepo && this.fileStorage) {
+            logger.info('proxy_persona: loading', { proxyForUserId });
             const proxyFiles = await this.fileRepo.listByUserId(proxyForUserId, { folder: '人设' });
+            logger.info('proxy_persona: files_found', { count: proxyFiles.length, keys: proxyFiles.map(f => f.r2_key) });
             if (proxyFiles.length > 0) {
               const latestFile = proxyFiles[0];
               if (latestFile && latestFile.r2_key) {
@@ -764,7 +766,7 @@ export class ChatService {
             }
 
             send('status', { phase: 'tools_running' });
-            const toolCtx = { userId: user.id, sessionId };
+            const toolCtx = { userId: user.id, sessionId, proxyForUserId };
             let executed: Awaited<ReturnType<ToolRegistry['executeAll']>>;
             if (orchestrationTaskAgentMode) {
               executed = [];

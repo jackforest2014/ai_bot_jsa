@@ -8,6 +8,7 @@ const ERROR_MESSAGE_MAX = 8000;
 export type ToolContext = {
   userId: string;
   sessionId?: string;
+  proxyForUserId?: string | null;
 };
 
 export type ToolResultMeta = {

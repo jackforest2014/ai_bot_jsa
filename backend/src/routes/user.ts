@@ -20,6 +20,7 @@ function userToJson(user: UserRow) {
     name: user.name,
     email: user.email,
     ai_nickname: user.ai_nickname,
+    proxy_uuid: user.proxy_uuid ?? null,
     ...(preferences !== undefined ? { preferences } : {}),
     created_at: user.created_at,
   };

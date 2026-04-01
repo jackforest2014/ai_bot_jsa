@@ -374,6 +374,7 @@ app.post('/api/chat/stream', async (c) => {
         sessionTitleSource,
         waitUntil: waitUntilFromContext(c),
         correlationId,
+        proxyForUserId: sessionRow.proxy_for_user_id,
         orchestrationGot: {
           taskAgent: isTaskAgentGotEnabled(c.env),
           routeAgent: isRouteAgentGotEnabled(c.env),

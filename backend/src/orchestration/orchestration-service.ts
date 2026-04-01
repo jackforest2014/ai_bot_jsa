@@ -71,6 +71,7 @@ export class OrchestrationService {
       sessionTitleSource,
       waitUntil,
       orchestrationGot,
+      proxyForUserId,
     } = params;
 
     const streamBase = {
@@ -81,6 +82,7 @@ export class OrchestrationService {
       waitUntil,
       orchestrationGot,
       orchestrationCorrelationId: correlationId,
+      proxyForUserId,
     };
     const encoder = new TextEncoder();
     const metricsBase = { user_id: user.id, session_id: sessionId, correlation_id: correlationId };
@@ -145,6 +147,7 @@ export class OrchestrationService {
             sessionId,
             sessionTitleSource,
             waitUntil,
+            proxyForUserId,
             orchestrationSystemAppend: append,
             orchestrationTaskAgent:
               firstIsTask && firstStep && planPayload[0]

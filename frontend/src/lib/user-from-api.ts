@@ -12,6 +12,12 @@ export function userFromApi(raw: unknown): User {
   else if (typeof o.email === 'string') email = o.email
   else email = null
   const ai_nickname = typeof o.ai_nickname === 'string' ? o.ai_nickname : undefined
+  const proxy_uuid =
+    o.proxy_uuid === null || o.proxy_uuid === undefined
+      ? null
+      : typeof o.proxy_uuid === 'string'
+        ? o.proxy_uuid
+        : null
   let preferences: Record<string, unknown> | undefined
   if (o.preferences && typeof o.preferences === 'object' && !Array.isArray(o.preferences)) {
     preferences = o.preferences as Record<string, unknown>
@@ -19,5 +25,5 @@ export function userFromApi(raw: unknown): User {
   const created_at = typeof o.created_at === 'number' ? o.created_at : undefined
   const emailNorm =
     email === undefined || email === null ? email : email.trim() === '' ? null : email
-  return { id, name, email: emailNorm, ai_nickname, preferences, created_at }
+  return { id, name, email: emailNorm, ai_nickname, proxy_uuid, preferences, created_at }
 }

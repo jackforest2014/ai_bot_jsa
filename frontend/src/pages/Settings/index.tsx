@@ -23,6 +23,7 @@ export default function SettingsPage() {
   const [aiNickname, setAiNickname] = useState('助手')
   const [preferencesText, setPreferencesText] = useState('{}')
   const [saving, setSaving] = useState(false)
+  const [justUploaded, setJustUploaded] = useState(false)
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
     typeof Notification !== 'undefined' ? Notification.permission : 'denied',
   )
@@ -99,7 +100,10 @@ export default function SettingsPage() {
       // 重新加载用户信息以获取 proxy_uuid
       const rawUser = await userAPI.getUser()
       useUserStore.getState().setUser(userFromApi(rawUser))
-      toast.success('人设上传成功！代理分身已就绪。')
+      setJustUploaded(true)
+      // 3秒后去掉高亮效果
+      setTimeout(() => setJustUploaded(false), 3000)
+      toast.success('人设上传成功！专属链接已生成，可分享给访客。')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '上传失败')
     } finally {
@@ -249,14 +253,26 @@ export default function SettingsPage() {
               通过专属链接向访客提供基于您设定的 AI 对话服务。访客留言将出现在侧边栏“访客收件箱”。
             </p>
             {user.proxy_uuid ? (
-              <div className="space-y-2">
-                <p className="text-xs text-slate-600 dark:text-slate-400">
-                  当前专属链接：
-                  <code className="ml-1 rounded bg-slate-200 px-1 text-cyan-800 dark:bg-slate-800/90 dark:text-cyan-200/90">
+              <div
+                className={`space-y-3 rounded-lg border p-3 transition-all duration-700 ${
+                  justUploaded
+                    ? 'border-emerald-400/60 bg-emerald-50/80 shadow-[0_0_20px_rgba(52,211,153,0.25)] dark:border-emerald-400/40 dark:bg-emerald-950/30'
+                    : 'border-slate-200/60 bg-slate-50/60 dark:border-slate-700/40 dark:bg-slate-900/30'
+                }`}
+              >
+                {justUploaded && (
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                    <span className="inline-block h-2 w-2 animate-ping rounded-full bg-emerald-400" />
+                    专属链接已生成，复制后分享给访客即可访问
+                  </p>
+                )}
+                <p className="break-all text-xs text-slate-700 dark:text-slate-300">
+                  <span className="mr-1 text-slate-500 dark:text-slate-400">专属链接：</span>
+                  <code className="rounded bg-slate-200/80 px-1.5 py-0.5 font-mono text-cyan-800 dark:bg-slate-800/80 dark:text-cyan-200">
                     {window.location.origin}/ai_bot/{user.proxy_uuid}
                   </code>
                 </p>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     className="rounded-md border border-cyan-500/40 bg-gradient-to-r from-cyan-700 to-cyan-600 px-3 py-1.5 text-xs font-medium text-white shadow hover:from-cyan-600 hover:to-cyan-500 disabled:opacity-50"
@@ -282,8 +298,15 @@ export default function SettingsPage() {
               </div>
             ) : (
               <div>
-                <label className="cursor-pointer rounded-md border border-cyan-500/40 bg-gradient-to-r from-cyan-700 to-cyan-600 px-4 py-2 text-sm font-medium text-white shadow hover:from-cyan-600 hover:to-cyan-500">
-                  上传人设文档启用分身 (.md)
+                <label
+                  className={`inline-flex cursor-pointer items-center gap-2 rounded-md border border-cyan-500/40 bg-gradient-to-r from-cyan-700 to-cyan-600 px-4 py-2 text-sm font-medium text-white shadow hover:from-cyan-600 hover:to-cyan-500 ${
+                    saving ? 'cursor-not-allowed opacity-50' : ''
+                  }`}
+                >
+                  {saving ? (
+                    <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  ) : null}
+                  {saving ? '上传中…' : '上传人设文档启用分身 (.md)'}
                   <input
                     type="file"
                     className="hidden"

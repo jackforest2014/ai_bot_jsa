@@ -90,7 +90,7 @@ sessionRoutes.get('/:sessionId/messages', async (c) => {
   const user = await requireUserFromBearer(c.req.header('Authorization'), users, c.env);
   const sessionId = c.req.param('sessionId');
   const sessions = new SessionRepository(db);
-  const session = await sessions.findByIdForUser(sessionId, user.id);
+  const session = await sessions.findByIdForUserOrProxyOwner(sessionId, user.id);
   if (!session) {
     return c.json({ error: '会话不存在', code: 'NOT_FOUND' }, 404);
   }

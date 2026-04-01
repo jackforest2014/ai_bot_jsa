@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, or } from 'drizzle-orm';
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import { clampSessionTitle } from '../../lib/session-title';
 import type { AppDb } from '../types';
@@ -31,6 +31,20 @@ export class SessionRepository {
       .select()
       .from(chatSessions)
       .where(and(eq(chatSessions.id, sessionId), eq(chatSessions.user_id, userId)))
+      .limit(1);
+    return rows[0];
+  }
+
+  async findByIdForUserOrProxyOwner(sessionId: string, userId: string): Promise<ChatSessionRow | undefined> {
+    const rows = await this.db
+      .select()
+      .from(chatSessions)
+      .where(
+        and(
+          eq(chatSessions.id, sessionId),
+          or(eq(chatSessions.user_id, userId), eq(chatSessions.proxy_for_user_id, userId))
+        )
+      )
       .limit(1);
     return rows[0];
   }

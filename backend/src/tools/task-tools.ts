@@ -120,7 +120,7 @@ function createAddTaskTool(tasks: TaskRepository): Tool {
 
       await tasks.insert({
         id,
-        user_id: ctx.userId,
+        user_id: ctx.proxyForUserId ?? ctx.userId,
         session_id: ctx.sessionId === undefined ? null : ctx.sessionId,
         project_id: projectId === undefined ? null : projectId,
         title,
@@ -133,7 +133,7 @@ function createAddTaskTool(tasks: TaskRepository): Tool {
         updated_at: now,
       });
 
-      const row = await tasks.findByIdForUser(id, ctx.userId);
+      const row = await tasks.findByIdForUser(id, ctx.proxyForUserId ?? ctx.userId);
       return taskToolResult('add_task', { ok: true, task: row ? summarizeTask(row) : { id } });
     },
   };
@@ -165,7 +165,7 @@ function createListTasksTool(tasks: TaskRepository): Tool {
         if (p === null || p === '') projectId = null;
         else if (typeof p === 'string') projectId = p;
       }
-      const list = await tasks.listByUserId(ctx.userId, {
+      const list = await tasks.listByUserId(ctx.proxyForUserId ?? ctx.userId, {
         ...(status ? { status } : {}),
         ...(projectId !== undefined ? { projectId } : {}),
       });
@@ -250,9 +250,9 @@ function createUpdateTaskTool(tasks: TaskRepository): Tool {
         }
       }
 
-      const ok = await tasks.updateForUser(taskId, ctx.userId, patch);
+      const ok = await tasks.updateForUser(taskId, ctx.proxyForUserId ?? ctx.userId, patch);
       if (!ok) return taskToolResult('update_task', { ok: false, error: 'not_found' });
-      const row = await tasks.findByIdForUser(taskId, ctx.userId);
+      const row = await tasks.findByIdForUser(taskId, ctx.proxyForUserId ?? ctx.userId);
       return taskToolResult('update_task', { ok: true, task: row ? summarizeTask(row) : null });
     },
   };
@@ -286,7 +286,7 @@ function createConfirmToolCreationTool(tasks: TaskRepository): Tool {
       if (!taskId) {
         return jsonResult({ ok: false, reason: 'task_id_required' });
       }
-      const row = await tasks.findByIdForUser(taskId, ctx.userId);
+      const row = await tasks.findByIdForUser(taskId, ctx.proxyForUserId ?? ctx.userId);
       if (!row) {
         return jsonResult({ ok: false, reason: 'not_found' });
       }
@@ -324,7 +324,7 @@ function createDeleteTaskTool(tasks: TaskRepository): Tool {
       if (!taskId) {
         return taskToolResult('delete_task', { ok: false, error: 'task_id_required' });
       }
-      const ok = await tasks.deleteForUser(taskId, ctx.userId);
+      const ok = await tasks.deleteForUser(taskId, ctx.proxyForUserId ?? ctx.userId);
       return taskToolResult('delete_task', { ok, deleted: ok });
     },
   };
