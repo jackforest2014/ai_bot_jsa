@@ -6,6 +6,7 @@ export const users = sqliteTable('users', {
   name: text('name').notNull().unique(),
   email: text('email').unique(),
   ai_nickname: text('ai_nickname').notNull().default('助手'),
+  proxy_uuid: text('proxy_uuid').unique(),
   created_at: integer('created_at').notNull(),
   preferences_json: text('preferences_json'),
 });
@@ -15,6 +16,7 @@ export const chatSessions = sqliteTable('chat_sessions', {
   user_id: text('user_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
+  proxy_for_user_id: text('proxy_for_user_id').references(() => users.id, { onDelete: 'set null' }),
   title: text('title').notNull(),
   title_source: text('title_source').notNull().default('auto'),
   created_at: integer('created_at').notNull(),
@@ -36,6 +38,7 @@ export const tasks = sqliteTable('tasks', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   project_id: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  session_id: text('session_id').references(() => chatSessions.id, { onDelete: 'set null' }),
   title: text('title').notNull(),
   description: text('description'),
   detail_json: text('detail_json'),

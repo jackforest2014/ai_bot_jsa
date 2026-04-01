@@ -19,6 +19,13 @@ export class UserRepository {
     return rows[0];
   }
 
+  async findByProxyUuid(proxyUuid: string): Promise<UserRow | undefined> {
+    const trimmed = proxyUuid.trim();
+    if (!trimmed) return undefined;
+    const rows = await this.db.select().from(users).where(eq(users.proxy_uuid, trimmed)).limit(1);
+    return rows[0];
+  }
+
   async findByName(name: string): Promise<UserRow | undefined> {
     const trimmed = name.trim();
     if (!trimmed) return undefined;
@@ -38,7 +45,7 @@ export class UserRepository {
 
   async update(
     id: string,
-    patch: Partial<Pick<UserRow, 'name' | 'email' | 'ai_nickname' | 'preferences_json'>>,
+    patch: Partial<Pick<UserRow, 'name' | 'email' | 'ai_nickname' | 'preferences_json' | 'proxy_uuid'>>,
   ): Promise<void> {
     await this.db.update(users).set(patch).where(eq(users.id, id));
   }

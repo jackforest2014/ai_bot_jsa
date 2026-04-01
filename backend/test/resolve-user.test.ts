@@ -17,6 +17,7 @@ describe('requireUserFromBearer', () => {
               name: 'N',
               email: null,
               ai_nickname: 'A',
+              proxy_uuid: null,
               preferences_json: null,
               created_at: 0,
             } satisfies import('../src/db').UserRow
@@ -37,6 +38,7 @@ describe('requireUserFromBearer', () => {
               name: 'D',
               email: null,
               ai_nickname: 'A',
+              proxy_uuid: null,
               preferences_json: null,
               created_at: 0,
             } satisfies import('../src/db').UserRow

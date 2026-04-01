@@ -4,6 +4,8 @@ import type { CitationPayload, ToolResultMetaPayload } from '@/types/sse'
 export interface ChatSession {
   id: string
   title: string
+  /** 代理会话：来访者的留言对应的主人 user_id，非代理时为 null */
+  proxy_for_user_id?: string | null
   created_at: number
   updated_at: number
 }

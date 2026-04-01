@@ -41,6 +41,7 @@ import { taskRoutes } from './routes/tasks';
 import { userRoutes } from './routes/user';
 import { promptRoutes } from './routes/prompts';
 import { adminRoutes } from './routes/admin';
+import { proxyRoutes } from './routes/proxy';
 import { CHAT_SSE_EVENTS } from './chat/sse-contract';
 import { isOrchestrationEnabled } from './orchestration/flags';
 import { isRouteAgentGotEnabled, isTaskAgentGotEnabled } from './orchestration/got-flags';
@@ -90,6 +91,7 @@ app.route('/api/workspace', workspaceRoutes);
 app.route('/api/files', fileRoutes);
 app.route('/api/prompts', promptRoutes);
 app.route('/api/admin', adminRoutes);
+app.route('/api/proxy', proxyRoutes);
 
 app.onError(handleError);
 
@@ -351,6 +353,8 @@ app.post('/api/chat/stream', async (c) => {
     sessionRepo,
     toolRegistry,
     memoryService,
+    filesRepo,
+    createFileStorage(c.env),
   );
 
   logger.info('chat stream: accepted', {
@@ -381,6 +385,7 @@ app.post('/api/chat/stream', async (c) => {
         sessionId,
         sessionTitleSource,
         waitUntil: waitUntilFromContext(c),
+        proxyForUserId: sessionRow.proxy_for_user_id,
       });
   // 经 Context 写出，便于与前置 CORS 中间件写在 c.res 上的头合并（见 hono Context#res setter）
   return c.body(stream, 200, {

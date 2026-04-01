@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 
+import { proxyAPI } from '@/api/proxy'
 import { userAPI } from '@/api/user'
 import { isProfileIncomplete } from '@/lib/profile'
 import { requestUploadNotificationPermission } from '@/lib/upload-notifications'
@@ -88,6 +89,22 @@ export default function SettingsPage() {
     if (p === 'granted') toast.success('已开启上传系统通知')
     else if (p === 'denied') toast.error('通知权限被拒绝，可在浏览器站点设置中修改')
     else toast('可稍后在浏览器提示中选择允许', { icon: 'ℹ️' })
+  }
+
+  const handleUploadProxyFile = async (file?: File) => {
+    if (!file) return
+    setSaving(true)
+    try {
+      await proxyAPI.uploadPersona(file)
+      // 重新加载用户信息以获取 proxy_uuid
+      const rawUser = await userAPI.getUser()
+      useUserStore.getState().setUser(userFromApi(rawUser))
+      toast.success('人设上传成功！代理分身已就绪。')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '上传失败')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const showSyncing = Boolean(token && profileLoading && !user)
@@ -224,6 +241,59 @@ export default function SettingsPage() {
             >
               {saving ? '保存中…' : '保存'}
             </button>
+          </section>
+
+          <section className="space-y-3 rounded-lg border border-cyan-500/30 bg-white/95 p-4 shadow-sm backdrop-blur-sm dark:border-cyan-500/20 dark:bg-slate-950/55 dark:shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">专属代理分身</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-500">
+              通过专属链接向访客提供基于您设定的 AI 对话服务。访客留言将出现在侧边栏“访客收件箱”。
+            </p>
+            {user.proxy_uuid ? (
+              <div className="space-y-2">
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  当前专属链接：
+                  <code className="ml-1 rounded bg-slate-200 px-1 text-cyan-800 dark:bg-slate-800/90 dark:text-cyan-200/90">
+                    {window.location.origin}/ai_bot/{user.proxy_uuid}
+                  </code>
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-cyan-500/40 bg-gradient-to-r from-cyan-700 to-cyan-600 px-3 py-1.5 text-xs font-medium text-white shadow hover:from-cyan-600 hover:to-cyan-500 disabled:opacity-50"
+                    disabled={saving}
+                    onClick={() => {
+                      void navigator.clipboard.writeText(`${window.location.origin}/ai_bot/${user.proxy_uuid}`)
+                      toast.success('已复制链接')
+                    }}
+                  >
+                    复制链接
+                  </button>
+                  <label className="cursor-pointer rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:border-cyan-500/50 hover:text-cyan-800 dark:border-slate-600/80 dark:bg-slate-900/70 dark:text-slate-100 dark:hover:border-cyan-500/35 dark:hover:text-cyan-100">
+                    更新人设文档 (.md)
+                    <input
+                      type="file"
+                      className="hidden"
+                      disabled={saving}
+                      accept=".md"
+                      onChange={(e) => void handleUploadProxyFile(e.target.files?.[0])}
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="cursor-pointer rounded-md border border-cyan-500/40 bg-gradient-to-r from-cyan-700 to-cyan-600 px-4 py-2 text-sm font-medium text-white shadow hover:from-cyan-600 hover:to-cyan-500">
+                  上传人设文档启用分身 (.md)
+                  <input
+                    type="file"
+                    className="hidden"
+                    disabled={saving}
+                    accept=".md"
+                    onChange={(e) => void handleUploadProxyFile(e.target.files?.[0])}
+                  />
+                </label>
+              </div>
+            )}
           </section>
 
           <section className="space-y-3 rounded-lg border border-cyan-500/30 bg-white/95 p-4 shadow-sm backdrop-blur-sm dark:border-cyan-500/20 dark:bg-slate-950/55 dark:shadow-[0_8px_32px_rgba(0,0,0,0.35)]">

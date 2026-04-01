@@ -9,6 +9,8 @@ const ChatPage = lazy(() => import('@/pages/Chat/index'))
 const FileWorkspace = lazy(() => import('@/pages/Files/FileWorkspace'))
 const SettingsPage = lazy(() => import('@/pages/Settings/index'))
 const LoginPage = lazy(() => import('@/pages/Login/index'))
+const InboxPage = lazy(() => import('@/pages/Inbox/index'))
+const ProxyPage = lazy(() => import('@/pages/ProxyChat/index'))
 
 function RouteFallback() {
   return <div className="flex min-h-[40vh] items-center justify-center text-slate-500">加载中…</div>
@@ -19,12 +21,15 @@ export default function AppRouter() {
     <Suspense fallback={<RouteFallback />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        {/* 访客代理页：无需登录，单独全屏 */}
+        <Route path="/ai_bot/:uuid" element={<ProxyPage />} />
         <Route element={<RequireAuth />}>
           <Route path="/" element={<AppShell />}>
             <Route index element={<ChatPage />} />
             <Route path="workspace" element={<FileWorkspace />} />
             <Route path="files" element={<Navigate to="/" replace />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="inbox" element={<InboxPage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

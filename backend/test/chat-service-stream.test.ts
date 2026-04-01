@@ -54,6 +54,7 @@ describe('ChatService.handleMessageStream', () => {
       name: 'User',
       email: null,
       ai_nickname: 'Bot',
+      proxy_uuid: null,
       created_at: 0,
       preferences_json: null,
     };

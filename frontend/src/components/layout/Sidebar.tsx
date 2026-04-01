@@ -63,6 +63,11 @@ export default function Sidebar() {
         <NavLink to="/settings" className={linkClass} onClick={closeSidebarOnMobile}>
           设置
         </NavLink>
+        {token ? (
+          <NavLink to="/inbox" className={linkClass} onClick={closeSidebarOnMobile}>
+            访客收件箱
+          </NavLink>
+        ) : null}
       </nav>
     </aside>
   )

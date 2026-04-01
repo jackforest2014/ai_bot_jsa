@@ -7,6 +7,7 @@ const baseRow = (id: string, title: string): TaskRow => ({
   id,
   user_id: 'u1',
   project_id: null,
+  session_id: null,
   title,
   description: null,
   detail_json: null,

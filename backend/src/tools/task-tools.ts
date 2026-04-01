@@ -121,6 +121,7 @@ function createAddTaskTool(tasks: TaskRepository): Tool {
       await tasks.insert({
         id,
         user_id: ctx.userId,
+        session_id: ctx.sessionId === undefined ? null : ctx.sessionId,
         project_id: projectId === undefined ? null : projectId,
         title,
         description: description === undefined ? null : description,

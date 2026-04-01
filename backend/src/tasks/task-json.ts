@@ -18,6 +18,7 @@ export function taskRowToApi(row: TaskRow): Record<string, unknown> {
     detail: detail ?? null,
     status: row.status,
     project_id: row.project_id ?? null,
+    session_id: row.session_id ?? null,
     starts_at: row.starts_at ?? null,
     ends_at: row.ends_at ?? null,
     schedule_zh: computeTaskScheduleZh(row),

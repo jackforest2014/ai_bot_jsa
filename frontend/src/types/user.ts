@@ -6,5 +6,6 @@ export interface User {
   email?: string | null
   ai_nickname?: string
   preferences?: Record<string, unknown>
+  proxy_uuid?: string | null
   created_at?: number
 }

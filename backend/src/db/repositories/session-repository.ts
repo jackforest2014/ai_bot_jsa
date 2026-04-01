@@ -18,6 +18,14 @@ export class SessionRepository {
       .orderBy(desc(chatSessions.updated_at));
   }
 
+  async listByProxyForUserId(proxyForUserId: string): Promise<ChatSessionRow[]> {
+    return this.db
+      .select()
+      .from(chatSessions)
+      .where(eq(chatSessions.proxy_for_user_id, proxyForUserId))
+      .orderBy(desc(chatSessions.updated_at));
+  }
+
   async findByIdForUser(sessionId: string, userId: string): Promise<ChatSessionRow | undefined> {
     const rows = await this.db
       .select()

@@ -8,6 +8,8 @@ export interface Task {
   detail?: unknown
   status?: string
   project_id?: string | null
+  /** 访客代理会话中 LLM 创建任务时，自动绑定到对应的 session_id */
+  session_id?: string | null
   /** Unix 秒，东八区墙钟语义 */
   starts_at?: number | null
   ends_at?: number | null

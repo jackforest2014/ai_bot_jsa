@@ -14,6 +14,7 @@ function sessionToJson(s: ChatSessionRow) {
     id: s.id,
     title: s.title,
     title_source: s.title_source,
+    proxy_for_user_id: s.proxy_for_user_id,
     created_at: s.created_at,
     updated_at: s.updated_at,
   };
@@ -36,12 +37,19 @@ sessionRoutes.post('/', async (c) => {
   const user = await requireUserFromBearer(c.req.header('Authorization'), users, c.env);
 
   let title = '新对话';
+  let proxyForUserId: string | null = null;
   try {
     const raw = await c.req.text();
     if (raw) {
-      const body = JSON.parse(raw) as { title?: unknown };
+      const body = JSON.parse(raw) as { title?: unknown; proxy_uuid?: unknown };
       if (typeof body.title === 'string' && body.title.trim()) {
         title = body.title.trim();
+      }
+      if (typeof body.proxy_uuid === 'string' && body.proxy_uuid.trim()) {
+        const targetUser = await users.findByProxyUuid(body.proxy_uuid.trim());
+        if (targetUser) {
+          proxyForUserId = targetUser.id;
+        }
       }
     }
   } catch {
@@ -54,6 +62,7 @@ sessionRoutes.post('/', async (c) => {
   await sessions.insert({
     id,
     user_id: user.id,
+    proxy_for_user_id: proxyForUserId,
     title,
     title_source: 'auto',
     created_at: now,
@@ -64,6 +73,15 @@ sessionRoutes.post('/', async (c) => {
     return c.json({ error: '创建会话失败', code: 'INTERNAL' }, 500);
   }
   return c.json(sessionToJson(row));
+});
+
+sessionRoutes.get('/inbox', async (c) => {
+  const db = getDb(c.env.task_assistant_db);
+  const users = new UserRepository(db);
+  const user = await requireUserFromBearer(c.req.header('Authorization'), users, c.env);
+  const sessions = new SessionRepository(db);
+  const list = await sessions.listByProxyForUserId(user.id);
+  return c.json(list.map(sessionToJson));
 });
 
 sessionRoutes.get('/:sessionId/messages', async (c) => {

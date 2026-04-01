@@ -23,6 +23,7 @@ function mapMessageFromApi(raw: unknown): ChatMessage {
 
 export const sessionsAPI = {
   list: () => request<ChatSession[]>('/api/sessions'),
+  listInbox: () => request<ChatSession[]>('/api/sessions/inbox'),
 
   create: () =>
     request<ChatSession>('/api/sessions', {
