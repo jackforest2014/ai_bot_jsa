@@ -148,3 +148,7 @@ backend/migrations-drizzle-snapshot/
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# macOS custom attributes
+.DS_Store
+**/.DS_Store
